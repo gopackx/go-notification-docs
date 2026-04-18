@@ -1,0 +1,51 @@
+---
+title: Channel Overview
+description: All 24 drivers at a glance — pricing, free tiers, and when to use each.
+---
+
+go-notification ships with seven channel families. Every family has multiple driver choices so you can match cost, deliverability, and compliance needs.
+
+## Quick Comparison
+
+| Channel   | Drivers | Free Options                          | Paid Options             | Best For             |
+|-----------|---------|---------------------------------------|--------------------------|----------------------|
+| Email     | 7       | SMTP, Mailgun (100/day), SES (3k/mo)  | SendGrid, Postmark       | Transactional email  |
+| WhatsApp  | 5       | WAHA Core (self-hosted)               | Fonnte, Twilio, Meta     | Customer comms (ID)  |
+| SMS       | 4       | Twilio trial, SNS (100/mo)            | Twilio, Zenziva          | OTP, alerts          |
+| Chat      | 5       | All free                              | —                        | Internal team notifs |
+| Push      | 1       | FCM (unlimited)                       | —                        | Mobile app notifs    |
+| Database  | 1       | Built-in                              | —                        | In-app notifications |
+| Webhook   | 1       | Built-in                              | —                        | Custom integrations  |
+
+## By family
+
+### Email (7 drivers)
+[SMTP](/docs/channels/email/smtp), [Mailgun](/docs/channels/email/mailgun), SendGrid, AWS SES, Resend, Postmark, Mailtrap.
+Start with the **[Email Overview](/docs/channels/email/overview)** for driver comparison and cloud port-blocking warnings.
+
+### WhatsApp (5 drivers)
+[WAHA](/docs/channels/whatsapp/waha), [Fonnte](/docs/channels/whatsapp/fonnte), Wablas, Twilio WhatsApp, Meta Cloud API.
+See the **[WhatsApp Overview](/docs/channels/whatsapp/overview)** for official vs. unofficial API tradeoffs.
+
+### SMS (4 drivers)
+Twilio, Zenziva, Vonage (Nexmo), AWS SNS.
+
+### Chat (5 drivers)
+[Slack](/docs/channels/chat/slack), [Telegram](/docs/channels/chat/telegram), Discord, Microsoft Teams.
+
+### Push (1 driver)
+Firebase Cloud Messaging (FCM) — iOS, Android, and Web.
+
+### Database (1 driver — 3 backends)
+[Database channel](/docs/channels/database) — in-app notifications stored in Postgres, MySQL, or SQLite.
+
+### Webhook (1 driver)
+Generic HTTP POST for any custom integration.
+
+## Decision guides
+
+Picking the right provider matters more than the code you write around it. Dedicated guides:
+
+- **[Choosing an Email Driver](/docs/guides/choosing-email-driver)** — flowchart + pricing at scale.
+- **[Choosing a WhatsApp Driver](/docs/guides/choosing-whatsapp-driver)** — ban risk, official vs. unofficial, Indonesia-specific options.
+- **[SMTP Port Blocking on Cloud](/docs/guides/smtp-cloud-issues)** — why SMTP silently fails on GCP/AWS/DigitalOcean.

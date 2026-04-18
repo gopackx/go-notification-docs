@@ -1,0 +1,194 @@
+---
+title: Production Tips
+description: Lessons from running go-notification in real apps — observability, durability, cost control.
+---
+
+A punch list of the things you probably want to do before pushing this to production.
+
+## 1. Put a real queue in front for durability
+
+The in-process worker pool is not durable. If the app crashes with 500 sends in the queue, those 500 sends are lost.
+
+For anything where you care about delivery (OTP, order confirmation, billing), **do the enqueue outside the library**:
+
+```
+HTTP handler → enqueue to Redis/SQS/NATS → worker picks up → notifier.Send()
+```
+
+go-notification becomes the "actually dispatch" layer; your queue is the durability layer. Redis Streams, NATS JetStream, and SQS all work well. Temporal is overkill unless you already use it.
+
+## 2. Wire `OnError` to something actionable
+
+Don't just log and move on:
+
+```go
+OnError: func(ctx context.Context, err notification.Error) {
+    slog.Error("notification failed",
+        "channel", err.Channel,
+        "type",    err.NotificationType,
+        "notifiable", fmt.Sprintf("%T/%v", err.Notifiable, err.Notifiable),
+        "attempts", err.Attempts,
+        "err",      err.Err,
+    )
+
+    // After all retries exhausted → dead-letter
+    deadLetterStore.Insert(ctx, err)
+
+    // Page on-call if it's high priority
+    if err.NotificationType == "billing.payment_failed" {
+        pager.Fire(err)
+    }
+}
+```
+
+## 3. Track metrics
+
+From `OnSent`, `OnError`, and `OnRetry`, emit counters and histograms:
+
+- `notifications_sent_total{channel,type}` — success counter.
+- `notifications_failed_total{channel,type}` — final-failure counter.
+- `notifications_retries_total{channel,type}` — retry counter; spikes predict outages.
+- `notifications_duration_seconds{channel}` — histogram of per-send latency.
+- `notifications_queue_depth` — gauge of pool queue depth (exposed via `notifier.Stats()`).
+
+Alert on:
+- Any sustained increase in the failure counter.
+- Queue depth staying high (workers falling behind).
+- Retry-rate above baseline on a specific driver (upstream degradation).
+
+## 4. Rate-limit per channel
+
+Set a **per-channel rate limit** even if you're nowhere near it. Without one, a bad loop that calls `Send()` millions of times in a tight loop can trip your provider's abuse detection before your own circuit breakers fire.
+
+```go
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    /* ... */
+    RateLimit: 10.0, // 10/sec — conservative for Mailgun starter
+}))
+```
+
+See [Rate Limiting](/docs/features/rate-limiting).
+
+## 5. Don't send from inside database transactions
+
+If you `Send()` inside a transaction and the transaction rolls back, you've already dispatched (or enqueued) the notification. The user gets an email for an order that was never actually created.
+
+Pattern:
+
+```go
+db.Transaction(func(tx *sql.Tx) error {
+    // ... DB writes ...
+    return nil
+})
+// Only after commit:
+notifier.Send(ctx, user, OrderCreated{})
+```
+
+Or: use an outbox pattern — write the intent to send alongside the business data, and have a separate worker pick it up after commit.
+
+## 6. Handle opt-outs
+
+At minimum: a column on the user indicating which channels they want. Respect it in `Via()`:
+
+```go
+func (n Marketing) Via(notifiable notification.Notifiable) []string {
+    u := notifiable.(User)
+    if !u.AcceptsMarketing { return nil } // nil or empty slice skips all channels
+    return []string{"mail"}
+}
+```
+
+For compliance (GDPR, CAN-SPAM), also maintain an audit log of consent changes. The notification library doesn't help with that — it's your data.
+
+## 7. Honor suppression lists
+
+When a provider reports a hard bounce or spam complaint, **stop sending to that address**. Most providers suppress internally for you, but your metrics will lie unless you mirror the suppression in your DB:
+
+```go
+OnError: func(_ context.Context, err notification.Error) {
+    if isHardBounce(err.Err) {
+        suppressedEmails.Add(ctx, extractEmail(err))
+    }
+}
+```
+
+Then in `Via()`, skip channels whose address is suppressed.
+
+## 8. Separate transactional from marketing
+
+If you do both, **use different sender domains** and **different channel names**:
+
+```go
+notifier.RegisterChannel("mail-transactional", postmark.New(/* ... */))
+notifier.RegisterChannel("mail-marketing",     mailgun.New(/* ... */))
+```
+
+Why: a spam complaint on marketing mail shouldn't poison the reputation of your password-reset domain. Most email providers actively enforce this separation — Postmark will kick you out if you send bulk on their transactional stream.
+
+## 9. Test failure paths
+
+Don't just test that `Send()` works. Test that:
+
+- `OnError` fires when a channel returns non-retryable.
+- Retries happen the right number of times.
+- Rate limiting queues without deadlocking.
+- `Close(ctx)` drains within the deadline.
+
+Use a test channel that returns configurable errors:
+
+```go
+type errChannel struct { err error; calls int }
+func (e *errChannel) Name() string { return "err" }
+func (e *errChannel) Send(_ context.Context, _ notification.Notification, _ notification.Notifiable) error {
+    e.calls++
+    return e.err
+}
+```
+
+Plug it in, assert on `.calls` and on the `OnError` hook.
+
+## 10. Keep secrets in a secrets manager
+
+Not in env vars pushed from a `.env.production` file in git. Not in a config file committed to the repo.
+
+- **AWS**: Secrets Manager or SSM Parameter Store.
+- **GCP**: Secret Manager.
+- **Self-hosted**: HashiCorp Vault.
+- **Local dev**: a `.env` file in `.gitignore` is fine.
+
+Load once at boot, pass to channel constructors, zero out the local copy if you want to be thorough.
+
+## 11. Log the provider message ID
+
+When it's available (Mailgun, SendGrid, Twilio all return one), log it. When a user says "I never got the email," having the provider message ID lets you look up the exact delivery attempt in the provider dashboard.
+
+```go
+OnSent: func(_ context.Context, s notification.SentInfo) {
+    slog.Info("notification sent",
+        "channel", s.Channel,
+        "provider_id", s.ProviderMessageID,
+        "attempts", s.Attempts,
+    )
+}
+```
+
+## 12. Document your channels
+
+In your repo, keep a one-pager: which channel name maps to which provider, under what conditions. Future you will forget, and new hires will be grateful.
+
+```markdown
+# Notification channels
+
+- `mail`                — SendGrid, for transactional mail
+- `mail-marketing`      — Mailgun, for opt-in marketing only
+- `whatsapp`            — Twilio WhatsApp, official API
+- `whatsapp-low-stakes` — WAHA, for internal tools only
+- `sms`                 — Twilio (global)
+- `sms-id`              — Zenziva (Indonesia only)
+- `slack`               — Slack bot (engineering workspace)
+- `slack-sales`         — Slack bot (sales workspace)
+- `database`            — in-app bell-icon center (Postgres)
+- `webhook-analytics`   — fires every send into the analytics pipeline
+```
+
+Cross-reference this from the registration code: one file, one function, one clear source of truth.

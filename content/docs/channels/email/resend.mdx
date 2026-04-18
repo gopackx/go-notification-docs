@@ -1,0 +1,52 @@
+---
+title: Resend
+description: Modern developer-first email API. Built by the Vercel / React Email ecosystem.
+---
+
+**Resend** is the newest player in the transactional email space. Clean API, React Email as a first-class template system, generous free tier.
+
+## Pricing
+
+- **Free** — 3,000 emails/month, 100/day.
+- **Pro** — from $20/month for 50k emails and unlimited domains.
+- **Enterprise** — custom, includes dedicated IPs and SLAs.
+
+Confirm at https://resend.com/pricing.
+
+## Setup
+
+1. Sign up at https://resend.com.
+2. Add a sending domain and verify via DNS.
+3. Generate an API key from the dashboard (starts with `re_`).
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/resend"
+
+notifier.RegisterChannel("mail", resend.New(resend.Config{
+    APIKey:   os.Getenv("RESEND_API_KEY"),
+    From:     "noreply@example.com",
+    FromName: "My App",
+}))
+```
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                      |
+|-------------|----------|----------|------------------------------------------------------------------|
+| `APIKey`    | `string` | yes      | Resend API key (`re_...`).                                        |
+| `From`      | `string` | yes      | Verified sender address.                                         |
+| `FromName`  | `string` | no       | Display name.                                                    |
+| `ReplyTo`   | `string` | no       | Optional Reply-To header.                                        |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Good fit
+
+- Teams already using React / Next.js / Vercel.
+- Projects that want template ergonomics without a heavy enterprise vendor.
+- Startups that outgrow Mailgun's free tier but don't need SendGrid's compliance story.
+
+## Troubleshooting
+
+- **`403 validation_error: domain is not verified`** — verify your domain's DNS records in the Resend dashboard.
+- **`429 rate_limit_exceeded`** — free-tier hourly cap. Upgrade or throttle.
+- **Mail from a new domain lands in spam** — Resend can't warm your reputation for you. Ramp volume gradually for the first 2–4 weeks.

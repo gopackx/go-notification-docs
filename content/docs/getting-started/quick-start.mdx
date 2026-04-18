@@ -1,0 +1,84 @@
+---
+title: Quick Start
+description: Send your first notification in five minutes.
+---
+
+This walks through sending an email via Mailgun — but the same pattern applies to every channel.
+
+## 1. Create the notifier
+
+```go
+notifier := notification.New(notification.Config{
+    // defaults: async worker pool, retries, exponential backoff
+})
+```
+
+## 2. Register a channel
+
+Each channel has a **name** (your choice) and a **driver** (a concrete implementation).
+
+```go
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: os.Getenv("MAILGUN_API_KEY"),
+    From:   "noreply@example.com",
+}))
+```
+
+You can register the same driver under multiple names (e.g. `mail-transactional` and `mail-marketing`) with different configs.
+
+## 3. Implement `Notifiable` on your user type
+
+`Notifiable` tells go-notification how to reach a given recipient:
+
+```go
+type User struct {
+    ID    int64
+    Name  string
+    Email string
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "mail":
+        return u.Email
+    }
+    return nil
+}
+```
+
+## 4. Define a notification
+
+A notification is any struct that implements `Notification`:
+
+```go
+type OrderShipped struct {
+    OrderID string
+}
+
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    return []string{"mail"}
+}
+
+func (n OrderShipped) ToMail(notifiable notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order has shipped").
+        Line("Hi, your order " + n.OrderID + " is on its way.").
+        Action("Track package", "https://example.com/track/"+n.OrderID)
+}
+```
+
+## 5. Send it
+
+```go
+user := User{ID: 1, Name: "Dani", Email: "dani@example.com"}
+notifier.Send(ctx, user, OrderShipped{OrderID: "A-1024"})
+```
+
+That's the end-to-end loop. `Send()` returns immediately; dispatch runs on the worker pool.
+
+## What to read next
+
+- **[Channel Overview](/docs/channels/overview)** — pick drivers for other channels.
+- **[Multi-Channel Example](/docs/examples/multi-channel)** — fan one notification across mail + WhatsApp + database.
+- **[Coming from Laravel](/docs/guides/laravel-comparison)** — the API maps directly if you used Laravel Notifications.

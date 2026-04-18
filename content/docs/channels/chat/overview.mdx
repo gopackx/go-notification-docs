@@ -1,0 +1,51 @@
+---
+title: Chat Overview
+description: Four chat platforms for internal notifications — Slack, Telegram, Discord, Microsoft Teams.
+---
+
+The chat channel family is built for **team-internal** notifications — deploys, alerts, build status, ops. All four drivers are free to use (they only cost you the time to set up bots/webhooks).
+
+## Driver Comparison
+
+| Driver       | Setup Complexity | Best For                                      | Note                                    |
+|--------------|------------------|-----------------------------------------------|-----------------------------------------|
+| Slack        | Low              | Engineering teams, SaaS dashboards            | Incoming Webhook or Bot token.          |
+| Telegram     | Very low         | Personal alerts, small teams, bots            | No workspace concept — just chat IDs.   |
+| Discord      | Low              | Gaming, community, OSS projects               | Webhook URL per channel.                |
+| MS Teams     | Medium           | Enterprise orgs already on Microsoft 365      | Incoming Webhook or Power Automate flow.|
+
+## Routing
+
+For per-recipient routing, return the chat/user/channel ID from `RouteNotificationFor(channel)`:
+
+```go
+func (u User) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "slack":    return u.SlackUserID         // U01ABCD...
+    case "telegram": return u.TelegramChatID      // 123456789
+    case "discord":  return u.DiscordChannelID    // for bot-based Discord
+    case "teams":    return u.TeamsChannelWebhook // URL-based
+    }
+    return nil
+}
+```
+
+For shared-channel notifications (everyone sees the same `#alerts` channel), a single webhook URL in the config is enough — no per-user routing needed.
+
+## Multi-workspace pattern
+
+Multiple Slack workspaces, multiple Teams tenants, multiple Discord servers — register each under its own channel name:
+
+```go
+notifier.RegisterChannel("slack-eng",    slack.NewWebhook(slack.WebhookConfig{URL: engURL}))
+notifier.RegisterChannel("slack-ops",    slack.NewWebhook(slack.WebhookConfig{URL: opsURL}))
+notifier.RegisterChannel("slack-sales",  slack.NewWebhook(slack.WebhookConfig{URL: salesURL}))
+```
+
+Then the notification's `Via()` picks which workspace gets the message.
+
+## When not to use chat
+
+- **Customer-facing notifications** — use email/WhatsApp/SMS for users, chat for your team.
+- **High-volume alerts** — Slack/Teams will rate-limit you. For firehose logging, send to the database channel and let humans query, not chat noise.
+- **Sensitive data** — chat platforms log everything, even deleted messages (on paid tiers with admin audit).

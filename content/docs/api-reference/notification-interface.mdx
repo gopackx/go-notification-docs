@@ -1,0 +1,111 @@
+---
+title: Notification Interface
+description: The contract every notification type implements.
+---
+
+A notification is a struct that carries the data for a single message and implements the `Notification` interface.
+
+## Interface
+
+```go
+type Notification interface {
+    Via(notifiable Notifiable) []string
+}
+```
+
+Just one required method. Everything else — `ToMail`, `ToWhatsApp`, `ToSms`, etc. — is optional and discovered by the driver via Go type assertion at send time.
+
+## `Via`
+
+Returns the channel names this notification should go through for the given recipient. It receives the `Notifiable` so routing can depend on the recipient:
+
+```go
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    user := notifiable.(User)
+
+    channels := []string{"database"} // in-app is always on
+    if user.EmailVerified   { channels = append(channels, "mail") }
+    if user.WantsWhatsApp   { channels = append(channels, "whatsapp") }
+    return channels
+}
+```
+
+## Per-channel render methods
+
+Each channel expects a method that produces its message shape. The signatures are listed in [Message Types](/docs/api-reference/message-types). Here's the surface:
+
+```go
+func (n MyNotification) ToMail(u Notifiable)     *mail.Message
+func (n MyNotification) ToWhatsApp(u Notifiable) *whatsapp.Message
+func (n MyNotification) ToSms(u Notifiable)      *sms.Message
+func (n MyNotification) ToPush(u Notifiable)     *push.Message
+func (n MyNotification) ToSlack(u Notifiable)    *slack.Message
+func (n MyNotification) ToTelegram(u Notifiable) *telegram.Message
+func (n MyNotification) ToDiscord(u Notifiable)  *discord.Message
+func (n MyNotification) ToTeams(u Notifiable)    *teams.Message
+func (n MyNotification) ToDatabase(u Notifiable) map[string]any
+func (n MyNotification) ToWebhook(u Notifiable)  *webhook.Message
+```
+
+You only implement the ones listed in your `Via()`. If `Via` returns `[]string{"mail", "database"}`, you need `ToMail` and `ToDatabase` — the rest don't need to exist.
+
+## Optional hooks
+
+```go
+func (n MyNotification) ShouldRetry(err error) bool
+```
+
+Return `false` to skip retry for specific errors. Useful for time-sensitive notifications (OTPs past their expiry).
+
+```go
+func (n MyNotification) Type() string
+```
+
+Override the type string used in logs and the database channel. Defaults to the Go type name.
+
+## Channel name matching
+
+The `Via()` strings must match the names you registered with `RegisterChannel`. A typo returns an error through `OnError`:
+
+```go
+// Registered
+notifier.RegisterChannel("mail-transactional", /* ... */)
+
+// Typo — "mail" isn't registered
+func (n OrderShipped) Via(u Notifiable) []string {
+    return []string{"mail"} // → OnError called with "channel 'mail' not registered"
+}
+```
+
+## Zero-value notifications
+
+Notifications are typically struct values, not pointers. Because `Via` receives a `Notifiable` and returns a `[]string`, the notification struct itself often has all data passed in at construction:
+
+```go
+type OrderShipped struct {
+    OrderID     string
+    TrackingURL string
+    EstimatedArrival time.Time
+}
+
+notifier.Send(ctx, user, OrderShipped{
+    OrderID:          "A-1024",
+    TrackingURL:      "https://...",
+    EstimatedArrival: time.Now().Add(48 * time.Hour),
+})
+```
+
+## Testing a notification
+
+```go
+func TestOrderShippedVia(t *testing.T) {
+    user := User{EmailVerified: true, WantsWhatsApp: false}
+    got := OrderShipped{}.Via(user)
+    require.Equal(t, []string{"database", "mail"}, got)
+}
+
+func TestOrderShippedToMail(t *testing.T) {
+    msg := OrderShipped{OrderID: "A-1"}.ToMail(User{})
+    require.Contains(t, msg.Subject(), "A-1")
+}
+```

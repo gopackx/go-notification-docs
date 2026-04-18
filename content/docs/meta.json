@@ -1,0 +1,16 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "features",
+    "channels",
+    "api-reference",
+    "examples",
+    "guides",
+    "changelog",
+    "faq",
+    "troubleshooting",
+    "contributing"
+  ]
+}

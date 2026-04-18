@@ -1,0 +1,61 @@
+---
+title: AWS SNS
+description: SMS via Amazon SNS. Cheapest option if you're already on AWS.
+---
+
+**AWS SNS** (Simple Notification Service) can send SMS as one of its message types. If your stack is already on AWS, it's the cheapest and most-integrated option.
+
+## Pricing
+
+- **Free tier** — 100 SMS/month for the first 12 months.
+- **US SMS** — from $0.00645 per message (Transactional category).
+- **International** — varies by country; pricing is published at https://aws.amazon.com/sns/sms-pricing.
+- **Promotional vs Transactional** — two SNS categories; Transactional has higher deliverability for OTPs but both are available.
+
+## Setup
+
+1. In the AWS SNS console, open **Text messaging (SMS)** → **Preferences**.
+2. Set the **default message type** (Transactional recommended for OTPs).
+3. Optionally, request a spending quota increase — SNS defaults to $1/month for new accounts.
+4. For **some countries** (US, Canada, India), you'll need to register a sender ID or 10DLC campaign. SNS walks you through this in the console.
+5. Create an IAM user with `sns:Publish` permission.
+
+```go
+import "github.com/gopackx/go-notification/channel/sms/sns"
+
+notifier.RegisterChannel("sms", sns.New(sns.Config{
+    Region:          "us-east-1",
+    AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+    SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+    MessageType:     "Transactional",
+    SenderID:        "YourBrand", // where supported
+}))
+```
+
+## Configuration reference
+
+| Field             | Type     | Required | Description                                                     |
+|-------------------|----------|----------|-----------------------------------------------------------------|
+| `Region`          | `string` | yes      | AWS region. `us-east-1` has the widest SMS coverage.             |
+| `AccessKeyID`     | `string` | yes      | IAM access key ID.                                               |
+| `SecretAccessKey` | `string` | yes      | IAM secret access key.                                           |
+| `MessageType`     | `string` | no       | `"Transactional"` (default) or `"Promotional"`.                  |
+| `SenderID`        | `string` | no       | Alphanumeric sender ID (not supported in all countries).          |
+| `Timeout`         | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## When SNS is the right pick
+
+- Your app already runs on AWS (Lambda, EC2, ECS).
+- You want CloudWatch metrics on SMS delivery out of the box.
+- You need only a single SMS provider and care more about cost than multi-region redundancy.
+
+## When to use something else
+
+- **You need specific country coverage** Twilio or Vonage support better — AWS SNS has gaps in some APAC and African markets.
+- **You need OTP primitives** — AWS has `Cognito` or `Pinpoint`; Twilio has `Verify`. This library's SMS driver is the low-level message primitive only.
+
+## Troubleshooting
+
+- **Hitting the $1/month cap** — request an increase via Support; they usually approve quickly for a legitimate transactional use case.
+- **Message never delivered, no error** — SNS quietly drops Promotional messages in some countries. Switch to Transactional.
+- **Sender ID ignored** — not supported in the destination country; SNS falls back to a random short code.

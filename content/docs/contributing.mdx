@@ -1,0 +1,82 @@
+---
+title: Contributing
+description: How to contribute a fix, a new driver, or a documentation improvement.
+---
+
+**go-notification** is open source under the MIT license. Contributions are welcome — especially new drivers, bug fixes, and clarifying documentation.
+
+## Before you start
+
+- **Open an issue first** for new features or new drivers. The maintainers may have strong opinions about scope — easier to align up front than after a PR.
+- **Bug fixes** can skip the issue and go straight to a PR. Include a failing test that passes with your fix.
+
+## Project setup
+
+```bash
+git clone https://github.com/gopackx/go-notification
+cd go-notification
+
+go mod download
+go test ./...
+```
+
+Tests should pass out of the box. If they don't, open an issue — that itself is a bug.
+
+## Conventions
+
+- **Drivers go under `channel/<family>/<provider>`** — e.g., `channel/mail/sendgrid`.
+- **Message builders go under `message/<channel>`** — e.g., `message/slack`.
+- **Raw HTTP only.** Do not introduce third-party SDKs. See [Security & Redaction](/docs/features/security) for why.
+- **`redact:"true"` on secret fields.** Anything that should never appear in logs.
+- **Use `context.Context` everywhere.** Cancellation and deadlines are part of the contract.
+- **No global state.** No `init()` side effects. Channels are constructed, not registered-at-import.
+
+## Adding a new driver
+
+A good new-driver PR includes:
+
+1. The channel implementation, following the pattern in `channel/mail/mailgun` (or any existing driver).
+2. Config struct with `redact:"true"` on secrets.
+3. A message type if the channel family doesn't already have one.
+4. Unit tests with `httptest.NewServer` covering: happy path, 4xx error, 5xx retryable error, timeout.
+5. A documentation page under `content/docs/channels/<family>/<provider>.mdx` in the docs repo.
+6. An entry in the channel overview's comparison table.
+
+The docs page template is described in [Building a Custom Channel](/docs/guides/custom-channel) — same structure (pricing, setup, config reference, sending, troubleshooting).
+
+## Writing docs
+
+The docs site is **Next.js + Fumadocs** — see the docs repo for contribution details. The content is in `content/docs/`, MDX format, one file per page. Keep the style consistent with existing pages:
+
+- Short sentences.
+- Code examples that actually compile.
+- Pricing is **always verified at source**, never invented.
+- Warnings (port blocking, ban risk, cost traps) are called out with `<Callout type="warn">`.
+- Links to related pages at the bottom.
+
+## Opening a PR
+
+1. Fork, create a branch.
+2. Write code and tests.
+3. Run `go test ./...`, `go vet ./...`, and `gofmt -s -w .`.
+4. Push, open a PR with:
+   - What it does.
+   - Why (link the issue).
+   - What you tested.
+   - Anything reviewers should pay attention to.
+
+## Review timeline
+
+Best-effort. Most PRs get a first response within a week. If a month passes with no response, a polite ping is welcome.
+
+## Code of conduct
+
+Be kind. Assume good intent. Disagreements are about the code, not the person. Violations → warnings, then bans. We don't have an elaborate CoC document; we have common sense.
+
+## Reporting security issues
+
+**Don't open a public issue for security vulnerabilities.** Email the maintainer directly (address in `SECURITY.md` of the repo). We'll respond within 48h.
+
+## License
+
+By contributing you agree that your contribution is licensed under the MIT license used by this project.

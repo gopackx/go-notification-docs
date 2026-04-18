@@ -1,0 +1,13 @@
+{
+  "title": "Email",
+  "pages": [
+    "overview",
+    "smtp",
+    "mailgun",
+    "sendgrid",
+    "ses",
+    "resend",
+    "postmark",
+    "mailtrap"
+  ]
+}

@@ -1,0 +1,53 @@
+---
+title: Installation
+description: Add go-notification to your Go project.
+---
+
+## Requirements
+
+- **Go 1.21 or newer**
+- For the database channel: PostgreSQL, MySQL, or SQLite — connected via `database/sql`.
+
+## Install
+
+```bash
+go get github.com/gopackx/go-notification
+```
+
+That's the entire dependency. Drivers for specific providers live under subpackages and are pulled in when you import them.
+
+## Import what you need
+
+You only import the drivers you actually use. Nothing is enabled by default — there is no wildcard import.
+
+```go
+import (
+    "github.com/gopackx/go-notification/notification"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+    "github.com/gopackx/go-notification/channel/whatsapp/waha"
+)
+```
+
+This keeps the binary small. If you never use Slack, the Slack driver isn't compiled in.
+
+## Verify
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/gopackx/go-notification/notification"
+)
+
+func main() {
+    notifier := notification.New(notification.Config{})
+    fmt.Println("go-notification ready:", notifier != nil)
+}
+```
+
+Run `go run .` — if it prints `go-notification ready: true`, you're done.
+
+## Next step
+
+Continue with **[Quick Start](/docs/getting-started/quick-start)** to send your first notification.

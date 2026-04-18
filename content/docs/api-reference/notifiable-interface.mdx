@@ -1,0 +1,139 @@
+---
+title: Notifiable Interface
+description: The contract your recipient types implement — how to be reached per channel.
+---
+
+A `Notifiable` is anything that can receive a notification — typically your `User` type, but nothing stops you from implementing it on `Team`, `Organization`, or any recipient concept in your domain.
+
+## Interface
+
+```go
+type Notifiable interface {
+    RouteNotificationFor(channel string) any
+}
+```
+
+One method. Returns the address/ID/token for the given channel, or `nil` if this recipient can't receive on that channel.
+
+## Typical implementation
+
+```go
+type User struct {
+    ID              int64
+    Email           string
+    Phone           string      // E.164
+    TelegramChatID  int64
+    SlackUserID     string
+    DeviceTokens    []string
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "mail":     return u.Email
+    case "sms":      return u.Phone
+    case "whatsapp": return u.Phone
+    case "telegram": return u.TelegramChatID
+    case "slack":    return u.SlackUserID
+    case "push":     return u.DeviceTokens // slice for multicast
+    case "database": return u.ID            // recipient key for the DB channel
+    }
+    return nil
+}
+```
+
+## Return types per channel
+
+| Channel       | Expected return type | Example                      |
+|---------------|----------------------|------------------------------|
+| `mail`        | `string`             | `"user@example.com"`          |
+| `sms`         | `string`             | `"+628123456789"`             |
+| `whatsapp`    | `string`             | `"+628123456789"` or E.164    |
+| `telegram`    | `int64`              | `123456789`                   |
+| `slack`       | `string`             | `"U01ABC"` or `"#channel"`    |
+| `discord`     | `string`             | channel ID (for bot mode)     |
+| `teams`       | `string`             | webhook URL (for URL mode)    |
+| `push`        | `[]string`           | FCM token list                |
+| `database`    | `any`                | user ID — stored as notifiable_id |
+| `webhook`     | not used             | webhook URL is in the channel config |
+
+## Returning `nil`
+
+If the user can't receive on a channel, return `nil`. The driver skips that send and moves on.
+
+```go
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "sms" && u.Phone == "" {
+        return nil // user hasn't added a phone number
+    }
+    // ...
+}
+```
+
+## Multiple destinations for one channel
+
+For channels like `push` (one user can have multiple devices), return a slice:
+
+```go
+case "push":
+    return u.ActiveDeviceTokens // []string
+```
+
+The driver fans out to each.
+
+For other channels like `mail` — you can't return `[]string`; if you need to send to multiple addresses on the same send, model that as multiple `Notifiables`:
+
+```go
+admins := []notification.Notifiable{admin1, admin2, admin3}
+notifier.SendMulti(ctx, admins, AlertFired{})
+```
+
+## Non-user notifiables
+
+`Team`, `Channel`, `Organization` — anything can be a `Notifiable`:
+
+```go
+type SlackChannel struct {
+    Name    string // e.g. "#ops"
+    Webhook string
+}
+
+func (c SlackChannel) RouteNotificationFor(channel string) any {
+    if channel == "slack" {
+        return c.Name
+    }
+    return nil
+}
+
+notifier.Send(ctx, SlackChannel{Name: "#ops"}, IncidentFired{})
+```
+
+## NotifiableType / NotifiableID
+
+For the database channel, the library stores a `notifiable_type` (Go type name by default) and `notifiable_id` (from `RouteNotificationFor("database")`). These are what you query against:
+
+```go
+items, _ := dbChannel.Query(ctx, database.Filter{
+    NotifiableType: "User", // the Go struct name
+    NotifiableID:   user.ID,
+})
+```
+
+To override the type string, implement an optional method:
+
+```go
+func (u User) NotifiableType() string { return "user" } // lowercase, snake_case, etc.
+```
+
+## Testing
+
+A fake notifiable is trivial:
+
+```go
+type fakeUser struct{ email string }
+func (f fakeUser) RouteNotificationFor(channel string) any {
+    if channel == "mail" { return f.email }
+    return nil
+}
+```
+
+Use that in unit tests to isolate notification rendering from your real user persistence.

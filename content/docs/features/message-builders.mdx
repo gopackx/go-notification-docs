@@ -1,0 +1,164 @@
+---
+title: Message Builders
+description: Fluent, chainable builders for every channel. Minimal surface area, maximum readability.
+---
+
+Every channel exposes a message builder via `NewMessage()`. The builders are designed to be:
+
+- **Chainable** — each method returns the builder so you can write it as one expression.
+- **Channel-specific** — `mail.Message` has `.Subject()`, `whatsapp.Message` has `.Media()`, etc. No leaky common base.
+- **Validation-light** — builders don't try to validate upstream provider rules (that's the driver's job). They only guard against obvious local mistakes (nil payload, empty required fields).
+
+## Mail
+
+```go
+import "github.com/gopackx/go-notification/message/mail"
+
+mail.NewMessage().
+    Subject("Your order shipped").
+    Greeting("Hi, Dani").                       // optional
+    Line("Your order A-1024 is on its way.").
+    Action("Track package", "https://...").     // renders as button
+    Line("Thanks for shopping with us.").
+    Salutation("— The team").                   // optional
+    Attach("invoice.pdf", pdfBytes, "application/pdf")
+```
+
+Template-driven alternative:
+
+```go
+mail.NewMessage().
+    Subject("Welcome").
+    Template("welcome.html", map[string]any{"name": user.Name})
+```
+
+See [Email Templates](/docs/features/templates) for template setup.
+
+## WhatsApp
+
+```go
+import "github.com/gopackx/go-notification/message/whatsapp"
+
+whatsapp.NewMessage().
+    Text("Hi! Your OTP is *" + code + "*. Valid 5 minutes.")
+```
+
+With media:
+
+```go
+whatsapp.NewMessage().
+    Image("https://cdn.example.com/invoice.jpg").
+    Caption("Your invoice")
+```
+
+Template (for Twilio/Meta official APIs):
+
+```go
+whatsapp.NewMessage().
+    Template("otp_v2", []string{code}).
+    Text("Your code: " + code) // fallback text
+```
+
+## SMS
+
+```go
+import "github.com/gopackx/go-notification/message/sms"
+
+sms.NewMessage().Text("Your OTP: " + code)
+```
+
+SMS is deliberately minimal — no rich content, no attachments. Anything more than text is a different channel.
+
+## Push (FCM)
+
+```go
+import "github.com/gopackx/go-notification/message/push"
+
+push.NewMessage().
+    Title("Order shipped").
+    Body("Track it now").
+    Badge(1).
+    Sound("default").
+    Data("order_id", "A-1024").
+    Android(push.AndroidConfig{Priority: "high"}).
+    IOS(push.IOSConfig{ContentAvailable: true})
+```
+
+## Slack
+
+```go
+import "github.com/gopackx/go-notification/message/slack"
+
+slack.NewMessage().
+    Text("Deploy started").
+    Attachment(
+        slack.NewAttachment().
+            Color("good").
+            Field("Service", svc, true).
+            Field("Env",     env, true).
+            Action("View build", buildURL),
+    )
+```
+
+## Telegram
+
+```go
+import "github.com/gopackx/go-notification/message/telegram"
+
+telegram.NewMessage().
+    Text("*Alert*\nBuild failed on `main`").
+    ParseMode("MarkdownV2").
+    DisableWebPagePreview(true)
+```
+
+## Discord
+
+```go
+import "github.com/gopackx/go-notification/message/discord"
+
+discord.NewMessage().
+    Content("Build failed").
+    Embed(
+        discord.NewEmbed().
+            Title("CI #1234").
+            Color(0xFF0000).
+            Field("Branch", "main", true),
+    )
+```
+
+## Teams
+
+```go
+import "github.com/gopackx/go-notification/message/teams"
+
+teams.NewMessage().
+    Title("Deploy").
+    Text("Environment: prod").
+    Fact("Commit", sha).
+    Action("Open build", url)
+```
+
+## Database
+
+```go
+// ToDatabase just returns a map[string]any — no builder is needed.
+return map[string]any{
+    "type":    "order.shipped",
+    "order_id": orderID,
+}
+```
+
+## Webhook
+
+```go
+import "github.com/gopackx/go-notification/message/webhook"
+
+webhook.NewMessage().
+    Event("order.shipped").
+    Payload(map[string]any{"order_id": id}).
+    Header("X-Idempotency-Key", idempotencyKey)
+```
+
+## Why fluent builders
+
+The builders are optimized for **reading a notification spec next to its sending code** — what you type in `ToMail()` should match what the mail looks like without mental translation. Struct literals lose that property once you have more than three fields.

@@ -1,0 +1,233 @@
+---
+title: Building a Custom Channel
+description: Implement the Channel interface end-to-end. Full example for a hypothetical "Pushover" driver.
+---
+
+This walks through building a new driver from scratch — HTTP call, config, retry semantics, tests. The example target is **Pushover**, a simple push-notification service that isn't built in.
+
+## 1. Define the package layout
+
+```
+channel/
+  pushover/
+    pushover.go       # Channel implementation
+    pushover_test.go
+    config.go         # Config struct
+```
+
+## 2. Config struct
+
+```go
+package pushover
+
+import "time"
+
+type Config struct {
+    Token   string `redact:"true"` // Pushover application token
+    User    string `redact:"true"` // default user key (can be overridden per-recipient)
+    Timeout time.Duration
+}
+```
+
+Use the `redact:"true"` tag to keep secrets out of logs. See [Security](/docs/features/security).
+
+## 3. Channel implementation
+
+```go
+package pushover
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "net/url"
+    "strings"
+    "time"
+
+    "github.com/gopackx/go-notification/notification"
+)
+
+const apiURL = "https://api.pushover.net/1/messages.json"
+
+type Channel struct {
+    cfg  Config
+    http *http.Client
+}
+
+func New(cfg Config) *Channel {
+    if cfg.Timeout == 0 {
+        cfg.Timeout = 30 * time.Second
+    }
+    return &Channel{
+        cfg:  cfg,
+        http: &http.Client{Timeout: cfg.Timeout},
+    }
+}
+
+func (c *Channel) Name() string { return "pushover" }
+```
+
+## 4. Define the message shape
+
+```go
+// in the same package, or under message/pushover for consistency
+type Message struct {
+    title    string
+    body     string
+    priority int
+    sound    string
+}
+
+func NewMessage() *Message { return &Message{} }
+func (m *Message) Title(s string) *Message    { m.title = s; return m }
+func (m *Message) Body(s string) *Message     { m.body = s; return m }
+func (m *Message) Priority(n int) *Message    { m.priority = n; return m }
+func (m *Message) Sound(s string) *Message    { m.sound = s; return m }
+```
+
+## 5. Implement `Send`
+
+```go
+func (c *Channel) Send(ctx context.Context, n notification.Notification, to notification.Notifiable) error {
+    // 1. Get the message from the notification (type-assertion pattern)
+    renderer, ok := n.(interface {
+        ToPushover(notification.Notifiable) *Message
+    })
+    if !ok {
+        return fmt.Errorf("notification %T does not implement ToPushover", n)
+    }
+    msg := renderer.ToPushover(to)
+    if msg == nil {
+        return fmt.Errorf("ToPushover returned nil")
+    }
+
+    // 2. Resolve the recipient's user key
+    userKey, _ := to.RouteNotificationFor("pushover").(string)
+    if userKey == "" {
+        userKey = c.cfg.User // fall back to default
+    }
+    if userKey == "" {
+        return fmt.Errorf("no pushover user key")
+    }
+
+    // 3. Build the request body
+    form := url.Values{}
+    form.Set("token",    c.cfg.Token)
+    form.Set("user",     userKey)
+    form.Set("title",    msg.title)
+    form.Set("message",  msg.body)
+    form.Set("priority", fmt.Sprintf("%d", msg.priority))
+    if msg.sound != "" {
+        form.Set("sound", msg.sound)
+    }
+
+    // 4. POST
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(form.Encode()))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+    resp, err := c.http.Do(req)
+    if err != nil {
+        // Network errors are retryable
+        return notification.RetryableError{Cause: err}
+    }
+    defer resp.Body.Close()
+
+    // 5. Check response
+    if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+        body, _ := io.ReadAll(resp.Body)
+        return notification.RetryableError{
+            Cause: fmt.Errorf("pushover %d: %s", resp.StatusCode, string(body)),
+        }
+    }
+    if resp.StatusCode >= 400 {
+        body, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("pushover %d: %s", resp.StatusCode, string(body))
+    }
+
+    // 6. Optionally parse the body for provider message ID
+    var out struct { Request string `json:"request"` }
+    _ = json.NewDecoder(resp.Body).Decode(&out)
+
+    return nil
+}
+```
+
+Key things to notice:
+
+- **Retryable vs non-retryable.** Wrap transient errors in `notification.RetryableError`; return plain errors for 4xx.
+- **Context plumbing.** Pass `ctx` to `http.NewRequestWithContext` so timeouts and cancellation work.
+- **Type-assertion render.** The notification exposes `ToPushover(...)`; your driver looks it up with a type-assertion interface.
+
+## 6. Register & use
+
+```go
+import "yourapp/channel/pushover"
+
+notifier.RegisterChannel("pushover", pushover.New(pushover.Config{
+    Token: os.Getenv("PUSHOVER_TOKEN"),
+}))
+
+type IncidentFired struct { Service, Severity string }
+
+func (n IncidentFired) Via(_ notification.Notifiable) []string {
+    return []string{"pushover"}
+}
+
+func (n IncidentFired) ToPushover(_ notification.Notifiable) *pushover.Message {
+    return pushover.NewMessage().
+        Title("Incident: " + n.Service).
+        Body("Severity " + n.Severity).
+        Priority(1).
+        Sound("siren")
+}
+```
+
+## 7. Tests
+
+Use `httptest.NewServer` to stub the upstream:
+
+```go
+func TestPushoverSend(t *testing.T) {
+    srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        _ = r.ParseForm()
+        if r.Form.Get("token") != "test-token" {
+            http.Error(w, "bad token", 401); return
+        }
+        w.Header().Set("Content-Type", "application/json")
+        _, _ = w.Write([]byte(`{"status":1,"request":"abc"}`))
+    }))
+    defer srv.Close()
+
+    // Point the driver at the test server
+    ch := &Channel{
+        cfg:  Config{Token: "test-token"},
+        http: srv.Client(),
+    }
+    // Override the package-level URL via a test hook (or inject via config)
+    // apiURL = srv.URL
+
+    err := ch.Send(ctx, testNotification{}, testUser{})
+    require.NoError(t, err)
+}
+```
+
+For testability, a common pattern is making `apiURL` a field on `Config` with a sensible default — that way tests can point at `httptest` without monkey-patching a package-level constant.
+
+## 8. Checklist before shipping
+
+- [ ] `Name()` returns a stable, lowercase identifier.
+- [ ] `Send` returns `RetryableError` for transient failures, plain errors for permanent ones.
+- [ ] Context is honored (timeouts cancel).
+- [ ] Secrets are in fields with `redact:"true"`.
+- [ ] HTTP errors include enough info to debug without leaking secrets.
+- [ ] At least one happy-path test and one retryable-failure test.
+- [ ] A `ToPushover` signature matches the Go type-assertion interface exactly — typos here are silent (notifications will error at dispatch time).
+
+## 9. Publishing back (optional)
+
+If your custom driver is generally useful, consider contributing it to the main project. The patterns above match the built-in drivers — a PR that follows them is a drop-in fit. See **[Contributing](/docs/contributing)** for the process.

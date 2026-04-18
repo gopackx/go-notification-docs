@@ -1,0 +1,240 @@
+---
+title: Full E-Commerce Example
+description: A realistic multi-channel notification setup for an e-commerce app — order lifecycle, OTPs, admin alerts.
+---
+
+This brings together everything. A small e-commerce backend that uses go-notification for:
+
+- **Customer comms** — order shipped, delivery confirmed.
+- **OTP** — 2FA via SMS.
+- **Admin alerts** — new signup, payment failure.
+- **In-app** — every event is also stored in the database channel.
+
+## Domain types
+
+```go
+type Customer struct {
+    ID            int64
+    Name, Email   string
+    Phone         string // E.164
+    DeviceTokens  []string
+    WantsMail     bool
+    WantsWhatsApp bool
+}
+
+func (c Customer) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "mail":     return c.Email
+    case "whatsapp": return c.Phone
+    case "sms":      return c.Phone
+    case "push":     return c.DeviceTokens
+    case "database": return c.ID
+    }
+    return nil
+}
+
+type Admin struct {
+    ID    int64
+    Email string
+    Slack string // channel ID like "#ops"
+}
+
+func (a Admin) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "mail":     return a.Email
+    case "slack":    return a.Slack
+    case "database": return a.ID
+    }
+    return nil
+}
+```
+
+## Notifications
+
+```go
+type OrderShipped struct {
+    OrderID     string
+    TrackingURL string
+}
+
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    c := notifiable.(Customer)
+    channels := []string{"database", "push"}
+    if c.WantsMail     { channels = append(channels, "mail") }
+    if c.WantsWhatsApp { channels = append(channels, "whatsapp") }
+    return channels
+}
+
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message { /* ... */ }
+func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message { /* ... */ }
+func (n OrderShipped) ToPush(u notification.Notifiable) *push.Message { /* ... */ }
+func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any { /* ... */ }
+
+
+type LoginOTP struct {
+    Code string
+}
+
+func (n LoginOTP) Via(_ notification.Notifiable) []string {
+    return []string{"sms"} // OTPs only via SMS for reliability
+}
+
+func (n LoginOTP) ToSms(_ notification.Notifiable) *sms.Message {
+    return sms.NewMessage().Text("Your code: " + n.Code + ". Valid 5 minutes.")
+}
+
+func (n LoginOTP) ShouldRetry(err error) bool {
+    // OTPs are useless after 60s — don't retry past then
+    return false // treat OTP as fire-and-forget; handle retry in caller if needed
+}
+
+
+type PaymentFailed struct {
+    OrderID string
+    Reason  string
+}
+
+func (n PaymentFailed) Via(_ notification.Notifiable) []string {
+    return []string{"slack", "database", "mail"}
+}
+
+func (n PaymentFailed) ToSlack(_ notification.Notifiable) *slack.Message {
+    return slack.NewMessage().
+        Text(":warning: Payment failure").
+        Attachment(
+            slack.NewAttachment().
+                Color("danger").
+                Field("Order",  n.OrderID, true).
+                Field("Reason", n.Reason,  true),
+        )
+}
+
+func (n PaymentFailed) ToMail(_ notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("[ops] Payment failed: " + n.OrderID).
+        Line("A payment failed and needs manual review.").
+        Line("Reason: " + n.Reason)
+}
+
+func (n PaymentFailed) ToDatabase(_ notification.Notifiable) map[string]any {
+    return map[string]any{"type": "payment.failed", "order_id": n.OrderID}
+}
+```
+
+## Boot
+
+```go
+func NewNotifier() *notification.Notifier {
+    n := notification.New(notification.Config{
+        WorkerCount: 8,
+        RateLimit:   200, // global ceiling
+        OnError: func(_ context.Context, err notification.Error) {
+            slog.Error("notify failed",
+                "channel", err.Channel,
+                "type",    err.NotificationType,
+                "err",     err.Err,
+            )
+        },
+        OnSent: func(_ context.Context, s notification.SentInfo) {
+            metrics.NotificationSent.WithLabelValues(s.Channel, s.NotificationType).Inc()
+        },
+    })
+
+    // Email — production via SendGrid, dev via Mailtrap
+    if env == "production" {
+        n.RegisterChannel("mail", sendgrid.New(sendgrid.Config{
+            APIKey: os.Getenv("SENDGRID_API_KEY"),
+            From:   "noreply@shop.example.com",
+        }))
+    } else {
+        n.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
+            Mode:    mailtrap.ModeSandbox,
+            APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
+            InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
+            From:    "dev@shop.example.com",
+        }))
+    }
+
+    // WhatsApp — Twilio for reliability
+    n.RegisterChannel("whatsapp", twiliowa.New(twiliowa.Config{
+        AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
+        AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
+        From:       "whatsapp:+14155238886",
+    }))
+
+    // SMS — Twilio for global, Zenziva for Indonesia
+    n.RegisterChannel("sms", twiliosms.New(/* ... */))
+
+    // Push — FCM
+    n.RegisterChannel("push", fcm.New(fcm.Config{
+        CredentialsJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
+    }))
+
+    // Ops Slack
+    n.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
+        URL: os.Getenv("OPS_SLACK_WEBHOOK"),
+    }))
+
+    // Database — in-app notifications
+    dbCh := database.New(database.Config{
+        DB:     db,
+        Driver: database.DriverPostgres,
+    })
+    _ = dbCh.AutoMigrate(context.Background())
+    n.RegisterChannel("database", dbCh)
+
+    return n
+}
+```
+
+## Trigger points
+
+```go
+// In the order service
+func (s *OrderService) markShipped(ctx context.Context, o *Order) error {
+    // ... DB updates ...
+    s.notifier.Send(ctx, o.Customer, OrderShipped{
+        OrderID:     o.ID,
+        TrackingURL: s.trackingURL(o),
+    })
+    return nil
+}
+
+// In the auth service
+func (s *AuthService) requestOTP(ctx context.Context, c Customer) error {
+    code := s.generateOTP(c.ID)
+    return s.notifier.Send(ctx, c, LoginOTP{Code: code})
+}
+
+// In the payment service
+func (s *PaymentService) onFailure(ctx context.Context, o *Order, reason string) {
+    // Alert all admins
+    s.notifier.SendMulti(ctx, s.admins, PaymentFailed{
+        OrderID: o.ID,
+        Reason:  reason,
+    })
+}
+```
+
+## Observability
+
+Metrics worth tracking:
+
+- `notifications_sent_total{channel, type}` — successful deliveries.
+- `notifications_failed_total{channel, type}` — post-retry failures.
+- `notifications_retries_total{channel, type}` — a spike here predicts an upstream outage.
+- `notifications_duration_seconds{channel}` — per-channel latency.
+
+All four can be wired up from `OnSent`, `OnError`, and `OnRetry` callbacks.
+
+## What you get
+
+With ~200 lines of notification code, this app now has:
+
+- Four outbound channels to customers (mail, WhatsApp, push, SMS).
+- Ops alerts in Slack.
+- Every event stored as an in-app notification.
+- Retries + rate limits + secret redaction for free.
+- A dev/prod split where dev never hits real customers.
+
+And if tomorrow you want to add Telegram, it's three lines: register the channel, add `ToTelegram()` to the notifications, add `"telegram"` to `Via()`.

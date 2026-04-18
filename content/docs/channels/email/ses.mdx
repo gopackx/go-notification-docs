@@ -1,0 +1,51 @@
+---
+title: AWS SES
+description: Send email via Amazon Simple Email Service. Cheapest at scale if your stack is AWS-native.
+---
+
+**AWS SES** is Amazon's transactional email service. It's the cheapest option at scale ($0.10 per 1,000 emails) once you clear sandbox mode.
+
+## Pricing
+
+- **Free tier** — 3,000 messages/month from inside AWS (EC2, Lambda, etc.) for 12 months, then 62,000/month only from EC2 indefinitely. Rules change — confirm at https://aws.amazon.com/ses/pricing.
+- **Standard** — $0.10 per 1,000 messages outbound.
+- **Attachments** — extra at $0.12 per GB sent.
+
+## Setup
+
+1. Pick a region (e.g. `us-east-1`) and **verify a domain or email address** in the SES console.
+2. Request production access (out of sandbox) — SES reviews your use case; approval is usually under 24h for legit transactional traffic.
+3. Create an IAM user with the `ses:SendEmail` permission and generate an access key pair.
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/ses"
+
+notifier.RegisterChannel("mail", ses.New(ses.Config{
+    Region:          "us-east-1",
+    AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+    SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+    From:            "noreply@example.com",
+}))
+```
+
+## Configuration reference
+
+| Field              | Type     | Required | Description                                                   |
+|--------------------|----------|----------|---------------------------------------------------------------|
+| `Region`           | `string` | yes      | AWS region that matches your verified identity.               |
+| `AccessKeyID`      | `string` | yes      | IAM access key ID. Use an IAM user scoped to SES-only.        |
+| `SecretAccessKey`  | `string` | yes      | IAM secret access key. Store in env or secrets manager.       |
+| `From`             | `string` | yes      | A verified sender identity (domain or email).                 |
+| `ConfigurationSet` | `string` | no       | Optional — for event publishing to CloudWatch / Firehose.      |
+| `Timeout`          | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
+
+## Sandbox limits
+
+While in sandbox you can only send to verified addresses and have a daily cap of 200 emails. Request production access before launching.
+
+## Troubleshooting
+
+- **`MessageRejected: Email address is not verified`** — sender or recipient not verified (and you're in sandbox).
+- **`SignatureDoesNotMatch`** — clock skew on your server, or wrong region in the config vs. IAM policy.
+- **Emails go to spam** — even SES needs SPF + DKIM + DMARC. The console wizard sets these up; don't skip it.
+- **Throttled (`Throttling: Maximum sending rate exceeded`)** — SES rate-limits start at ~1 msg/sec. File a limit increase once your workload requires it.

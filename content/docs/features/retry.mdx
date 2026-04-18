@@ -1,0 +1,88 @@
+---
+title: Retry & Backoff
+description: Automatic retries with exponential backoff for transient failures.
+---
+
+Transient failures are the norm for notification APIs — network blips, upstream 429s, connection resets. go-notification retries these automatically with exponential backoff.
+
+## Defaults
+
+```go
+notification.New(notification.Config{
+    MaxRetries:    3,                // total attempts = 1 + 3 retries = 4
+    RetryDelay:    1 * time.Second,  // first retry waits 1s
+    RetryBackoff:  2.0,              // each subsequent retry doubles
+    RetryMaxDelay: 30 * time.Second, // cap on single wait
+})
+```
+
+Default schedule:
+- Attempt 1 — fire immediately
+- Retry 1 — after 1s
+- Retry 2 — after 2s (1s × 2)
+- Retry 3 — after 4s (2s × 2)
+- Give up, call `OnError`
+
+## What gets retried
+
+The driver decides whether a failure is retryable. In general:
+
+- **Retryable:** network errors, 5xx responses, 429 rate-limit responses (with respect for `Retry-After` header), timeouts.
+- **Not retryable:** 4xx client errors (bad API key, bad recipient, invalid payload) — retrying won't help.
+
+Drivers can opt into more nuance. For example, FCM maps `UNREGISTERED` to non-retryable (the token is dead) and `UNAVAILABLE` to retryable.
+
+## Per-notification override
+
+Implement `ShouldRetry(err) bool` on your notification type to override:
+
+```go
+func (n OTP) ShouldRetry(err error) bool {
+    // OTPs are time-sensitive. If it's been more than 30s, don't retry.
+    return time.Since(n.CreatedAt) < 30*time.Second
+}
+```
+
+## Respecting `Retry-After`
+
+If an upstream returns 429 with a `Retry-After` header, the driver honors it — the next attempt waits at least that long, overriding the backoff schedule.
+
+## Jitter
+
+Exponential backoff without jitter causes retry storms — every client hits the upstream at exactly the same moment after a blip. The built-in backoff adds **±20% jitter** by default. You can tune:
+
+```go
+notification.Config{
+    RetryJitter: 0.2, // 20%. Set to 0 to disable.
+}
+```
+
+## Rolling your own
+
+If you need a completely custom retry strategy, implement `RetryPolicy` and set it on the config:
+
+```go
+type myPolicy struct{}
+
+func (myPolicy) NextDelay(attempt int, err error) (time.Duration, bool) {
+    if !isRetryable(err) { return 0, false }
+    if attempt > 10      { return 0, false }
+    return time.Duration(attempt*attempt) * time.Second, true
+}
+
+notification.New(notification.Config{ RetryPolicy: myPolicy{} })
+```
+
+## Observability
+
+Each retry fires a `OnRetry` callback (if set) so you can count them:
+
+```go
+notification.New(notification.Config{
+    OnRetry: func(ctx context.Context, attempt int, err error) {
+        retryCounter.Add(1)
+    },
+})
+```
+
+Track retries as a metric; sustained retry spikes mean something upstream is degrading and you should investigate, not just absorb.

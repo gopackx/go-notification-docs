@@ -1,0 +1,49 @@
+---
+title: WhatsApp Overview
+description: Five WhatsApp drivers — official (Meta, Twilio) and unofficial (WAHA, Fonnte, Wablas). How to pick.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+WhatsApp is two ecosystems:
+
+- **Official APIs** via Meta (directly) or Twilio / 360dialog (as business solution providers). Zero ban risk. Slow onboarding. Pay per conversation.
+- **Unofficial APIs** (WAHA, Fonnte, Wablas) that reverse-engineer the WhatsApp Web protocol. Instant setup. Cheap or free. Carries a **real risk of account ban** because it violates WhatsApp's Terms of Service.
+
+Both have their place. The goal of this page is to make the tradeoff explicit.
+
+## Official vs. Unofficial
+
+|                        | Official (Meta, Twilio) | Unofficial (WAHA, Fonnte, Wablas) |
+|------------------------|-------------------------|-----------------------------------|
+| Risk of ban            | None                    | Possible (against WhatsApp ToS)   |
+| Pricing                | Per conversation        | Flat rate or per message          |
+| Setup                  | Complex — business verification | Simple — scan QR           |
+| Templates, buttons, lists | Yes                  | Limited (text, media)             |
+| Good for               | Production, enterprise  | MVP, internal tools, low volume   |
+
+## Driver Comparison
+
+| Driver                                       | Self-Hosted | Official | Free Tier       | Pricing             |
+|----------------------------------------------|-------------|----------|-----------------|---------------------|
+| [WAHA](/docs/channels/whatsapp/waha)         | Yes (Docker)| No       | Core: free      | Plus: ~$15/mo       |
+| [Fonnte](/docs/channels/whatsapp/fonnte)     | No          | No       | Trial           | From Rp 25k/mo      |
+| Wablas                                       | No          | No       | Trial           | From Rp 50k/mo      |
+| Twilio WhatsApp                              | No          | Yes (BSP)| Trial credits   | $0.005–$0.05/msg    |
+| Meta Cloud API                               | No          | Yes      | 1,000 conv/mo   | Per conversation    |
+
+## Choosing a driver
+
+Fast answer:
+
+1. **Zero ban risk required?** → Meta Cloud API or Twilio WhatsApp.
+2. **Need data on your own infra?** → WAHA.
+3. **Indonesia market, low budget?** → Fonnte or Wablas.
+4. **Global, enterprise, compliance?** → Twilio WhatsApp.
+5. **Prototype or internal tool?** → WAHA Core (free).
+
+Full walkthrough with cost-at-scale math: **[Choosing a WhatsApp Driver](/docs/guides/choosing-whatsapp-driver)**.
+
+<Callout type="warn" title="About ban risk">
+We don't recommend unofficial APIs for production user-facing traffic where account loss would be catastrophic. We do use them ourselves for internal alerts, MVPs, and low-volume ops — and many Indonesian products do the same. It's a risk you manage, not avoid.
+</Callout>

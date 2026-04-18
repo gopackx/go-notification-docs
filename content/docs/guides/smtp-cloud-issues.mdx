@@ -1,0 +1,72 @@
+---
+title: SMTP Port Blocking on Cloud
+description: Why SMTP silently fails on GCP, AWS, DigitalOcean, and Azure — and what to use instead.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## The problem
+
+Most cloud providers block outbound SMTP traffic to prevent spam from compromised instances. If you deploy a Go app that sends email over SMTP on one of these platforms, it will time out or silently fail — often only in production, while local dev works fine.
+
+## Provider status
+
+| Provider       | Port 25              | Port 587          | Port 465          | Workaround                           |
+|----------------|----------------------|-------------------|-------------------|--------------------------------------|
+| GCP            | Blocked (permanent)  | Usually works     | Usually works     | Use API-based driver                 |
+| AWS EC2        | Blocked (can request)| Works             | Works             | Request removal or use SES           |
+| DigitalOcean   | Blocked (new accounts)| Works            | Works             | Request removal                      |
+| Azure          | Blocked              | Usually works     | Usually works     | Use API-based driver                 |
+| Hetzner        | Open                 | Open              | Open              | No issues                            |
+| OVH            | Open                 | Open              | Open              | No issues                            |
+| Bare metal     | Open                 | Open              | Open              | No issues                            |
+
+Provider policies change. This table is a starting point, not a contract. Always test the actual connection from the deployed environment.
+
+## The fix
+
+Switch to an API-based email driver. API drivers use HTTPS (port 443), which is never blocked.
+
+```go
+// ❌ SMTP — may be blocked on cloud
+import "github.com/gopackx/go-notification/channel/mail/smtp"
+
+notifier.RegisterChannel("mail", smtp.New(smtp.Config{
+    Host: "smtp.gmail.com", Port: 587, /* ... */
+}))
+
+// ✅ Mailgun — uses HTTPS port 443
+import "github.com/gopackx/go-notification/channel/mail/mailgun"
+
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: os.Getenv("MAILGUN_API_KEY"),
+}))
+
+// ✅ SendGrid — uses HTTPS port 443
+// ✅ AWS SES   — uses HTTPS port 443
+// ✅ Resend    — uses HTTPS port 443
+// ✅ Postmark  — uses HTTPS port 443
+```
+
+The notification code doesn't change — only the channel registration does. That's the whole point of a unified interface.
+
+<Callout type="info" title="How to detect this is your problem">
+- Works on your laptop, fails in prod.
+- `net.Dial` to `smtp.example.com:25` or `:587` hangs until timeout.
+- No error from your SMTP library, just `i/o timeout`.
+
+If any of those match, port blocking is almost certainly the cause.
+</Callout>
+
+## When SMTP is still fine
+
+- On-premise / bare-metal servers.
+- Non-restrictive hosts (Hetzner, OVH, many European providers).
+- Local development with Mailhog or Mailpit.
+- Corporate mail servers inside a firewall.
+
+## Related
+
+- [Email Overview](/docs/channels/email/overview) — comparison of all API drivers.
+- [Choosing an Email Driver](/docs/guides/choosing-email-driver) — pick the right one for your scale.

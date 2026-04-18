@@ -1,0 +1,126 @@
+---
+title: WhatsApp with WAHA
+description: Full end-to-end example of running WAHA in Docker and sending WhatsApp notifications from Go.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A complete self-hosted WhatsApp notification pipeline. 10 minutes end-to-end.
+
+<Callout type="warn" title="Ban risk">
+WAHA uses unofficial WhatsApp protocols. Suitable for MVPs, internal tools, low-volume. For production customer comms where account loss is unacceptable, use **Twilio WhatsApp** or **Meta Cloud API** instead.
+</Callout>
+
+## Step 1 — Start WAHA
+
+```bash
+docker run -d \
+  --name waha \
+  -p 3000:3000 \
+  -v waha-data:/app/.sessions \
+  -e WHATSAPP_HOOK_URL=https://your-app/waha-webhook \
+  devlikeapro/waha
+```
+
+The `-v` mount persists the session — you'll scan the QR code once, not every restart.
+
+## Step 2 — Connect your WhatsApp
+
+1. Open `http://localhost:3000/dashboard` in your browser.
+2. Click **Start** on the default session.
+3. On your phone, open WhatsApp → Settings → Linked Devices → **Link a Device**.
+4. Scan the QR code in the WAHA dashboard.
+
+The session page should flip to `WORKING` within a few seconds.
+
+## Step 3 — Go application
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "time"
+
+    "github.com/gopackx/go-notification/notification"
+    "github.com/gopackx/go-notification/channel/whatsapp/waha"
+    "github.com/gopackx/go-notification/message/whatsapp"
+)
+
+type Customer struct {
+    Name  string
+    Phone string // E.164, e.g. "+628123456789"
+}
+
+func (c Customer) RouteNotificationFor(channel string) any {
+    if channel == "whatsapp" {
+        return c.Phone
+    }
+    return nil
+}
+
+type PaymentReceived struct {
+    Amount  float64
+    Invoice string
+}
+
+func (n PaymentReceived) Via(notifiable notification.Notifiable) []string {
+    return []string{"whatsapp"}
+}
+
+func (n PaymentReceived) ToWhatsApp(notifiable notification.Notifiable) *whatsapp.Message {
+    c := notifiable.(Customer)
+    return whatsapp.NewMessage().Text(
+        "Halo " + c.Name + ",\n\n" +
+            "Pembayaran sebesar Rp" + fmt.Sprintf("%.0f", n.Amount) +
+            " untuk invoice *" + n.Invoice + "* telah kami terima.\n\n" +
+            "Terima kasih!",
+    )
+}
+
+func main() {
+    notifier := notification.New(notification.Config{
+        OnError: func(_ context.Context, err notification.Error) {
+            log.Printf("send failed: %v", err.Err)
+        },
+    })
+
+    notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+        BaseURL:   "http://localhost:3000",
+        APIKey:    os.Getenv("WAHA_API_KEY"),
+        SessionID: "default",
+    }))
+
+    customer := Customer{Name: "Dani", Phone: "+628123456789"}
+
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    notifier.Send(ctx, customer, PaymentReceived{
+        Amount:  250_000,
+        Invoice: "INV-2026-042",
+    })
+
+    notifier.Close(ctx)
+}
+```
+
+## Run
+
+```bash
+export WAHA_API_KEY=your-key # set in WAHA dashboard if enabled
+go run .
+```
+
+Message appears in the WhatsApp conversation within a few seconds.
+
+## Production checklist
+
+- **Put WAHA behind TLS.** Use Caddy or Nginx — WAHA's built-in HTTP listener should never be exposed publicly as-is.
+- **Enable API key auth** in WAHA settings and pass it in `Config.APIKey`.
+- **Back up the session volume** — if you lose it, your WhatsApp session is gone and you must re-scan.
+- **Monitor session health** via WAHA's `/api/sessions/default` endpoint. The session can go `FAILED` if WhatsApp rejects the connection — your sends will silently queue up at the driver level.
+- **Rate-limit yourself.** Don't blast messages. 1–2 per second per number is aggressive but usually safe; faster than that and the number gets flagged.
+- **Plan a migration path** to Twilio or Meta Cloud API if this scales. The notification code doesn't change — only the channel registration.

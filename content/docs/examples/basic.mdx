@@ -1,0 +1,94 @@
+---
+title: Basic Example
+description: A complete, runnable program that sends one email via Mailgun.
+---
+
+This is the smallest useful program — no frameworks, no extras. Drop it into `main.go`, set one env var, and it runs.
+
+## main.go
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "time"
+
+    "github.com/gopackx/go-notification/notification"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+    "github.com/gopackx/go-notification/message/mail"
+)
+
+type User struct {
+    ID    int64
+    Email string
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "mail" {
+        return u.Email
+    }
+    return nil
+}
+
+type OrderShipped struct {
+    OrderID string
+}
+
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"mail"}
+}
+
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order has shipped").
+        Line("Hi there,").
+        Line("Your order " + n.OrderID + " is on its way.").
+        Action("Track package", "https://example.com/track/"+n.OrderID).
+        Line("Thanks for shopping with us.")
+}
+
+func main() {
+    notifier := notification.New(notification.Config{})
+
+    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+        Domain: "mg.example.com",
+        APIKey: os.Getenv("MAILGUN_API_KEY"),
+        From:   "noreply@example.com",
+    }))
+
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    user := User{ID: 1, Email: "customer@example.com"}
+
+    if err := notifier.Send(ctx, user, OrderShipped{OrderID: "A-1024"}); err != nil {
+        log.Fatalf("send failed: %v", err)
+    }
+
+    // Give the async worker a moment to flush before the program exits.
+    notifier.Close(ctx)
+    log.Println("done")
+}
+```
+
+## Run it
+
+```bash
+export MAILGUN_API_KEY=key-xxxx
+go run .
+```
+
+## What's happening
+
+1. `notification.New()` spins up a worker pool with sane defaults — async sends, exponential-backoff retries, 30s timeout.
+2. `RegisterChannel("mail", ...)` wires up one driver under one name.
+3. `Send()` calls `OrderShipped.Via()` to get channel names, then for each one calls `ToMail()` to build the message and dispatches to the Mailgun driver.
+4. `Close()` waits for in-flight sends to finish. Without it, a short program may exit before the async send completes.
+
+## Next
+
+- **[Multi-Channel Example](/docs/examples/multi-channel)** — fan one notification across mail + WhatsApp + database.
+- **[In-App Notifications](/docs/examples/in-app-notifications)** — add a notification center backed by the database channel.

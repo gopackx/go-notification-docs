@@ -1,0 +1,65 @@
+---
+title: Twilio WhatsApp
+description: Official WhatsApp Business API via Twilio as a BSP. Zero ban risk, pay per conversation.
+---
+
+**Twilio** is a WhatsApp Business Solution Provider (BSP) — an authorized reseller of the official WhatsApp Business Platform. Using Twilio WhatsApp is safe, sanctioned, and fully supported by Meta.
+
+## When to use this
+
+- You need **zero ban risk**.
+- You ship **customer-critical** notifications (OTPs, order confirmations, billing alerts).
+- You already use Twilio for SMS or Voice (same console, same billing).
+- You want **message templates, buttons, and list replies** — all the official features.
+
+## Pricing
+
+- **Trial** — free credits.
+- **Per-message** — $0.005 for utility messages, up to $0.05+ for marketing, varies by country.
+- **Per-conversation** — WhatsApp bills in 24-hour conversation windows; Twilio exposes this directly.
+- Country-specific pricing: https://www.twilio.com/whatsapp/pricing.
+
+## Setup
+
+1. Create a Twilio account at https://twilio.com.
+2. **Request WhatsApp sender approval** — business verification, Meta review, can take days.
+3. Use Twilio's **sandbox** for development (no approval needed) — it's a shared test number you join by messaging a code.
+4. Copy **Account SID**, **Auth Token**, and your **WhatsApp-enabled number**.
+
+```go
+import "github.com/gopackx/go-notification/channel/whatsapp/twilio"
+
+notifier.RegisterChannel("whatsapp", twilio.New(twilio.Config{
+    AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
+    AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
+    From:       "whatsapp:+14155238886", // sandbox or your approved sender
+}))
+```
+
+## Configuration reference
+
+| Field        | Type     | Required | Description                                                     |
+|--------------|----------|----------|-----------------------------------------------------------------|
+| `AccountSID` | `string` | yes      | Twilio Account SID (starts with `AC`).                           |
+| `AuthToken`  | `string` | yes      | Twilio Auth Token. Rotate on compromise.                         |
+| `From`       | `string` | yes      | `whatsapp:+<number>` format. Sandbox or your approved sender.    |
+| `Timeout`    | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Sending templates
+
+WhatsApp requires pre-approved templates for business-initiated conversations (marketing, reminders, OTPs sent outside the 24h window). Manage templates in the Twilio Console → WhatsApp → Template Manager.
+
+```go
+func (n OTP) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
+    return whatsapp.NewMessage().
+        Template("otp_verification", []string{n.Code}). // SID or name, plus variables
+        Text("Your code: " + n.Code)                      // fallback text
+}
+```
+
+## Troubleshooting
+
+- **`63007: not an active WhatsApp number`** — your `From` isn't approved yet, or sandbox join code wasn't entered by the recipient.
+- **`63016: template not approved`** — wait for Meta approval, or the template name has a typo.
+- **24-hour window errors** — you can only free-text the recipient within 24h of their last inbound message. Outside that, you must use an approved template.
+- **Cost surprises** — marketing category is 5–10× utility. Double-check template categorization before launch.

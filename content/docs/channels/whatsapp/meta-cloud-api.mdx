@@ -1,0 +1,74 @@
+---
+title: Meta Cloud API
+description: Official WhatsApp Business API direct from Meta. No middleman.
+---
+
+The **Meta Cloud API** is WhatsApp's direct official API, hosted by Meta. It's the cheapest official option because you skip the BSP markup, but setup is more involved.
+
+## When to use this
+
+- You need the official API but don't want to pay a BSP's fee on top.
+- You're comfortable managing webhooks, template approvals, and business verification yourself.
+- You have non-trivial volume where BSP markups matter.
+
+## Pricing
+
+- **Free** — 1,000 business-initiated conversations/month.
+- **Per conversation** — pricing varies by country, typically $0.005–$0.15 depending on category (utility, marketing, authentication).
+- https://developers.facebook.com/docs/whatsapp/pricing
+
+## Setup
+
+This is the longest setup of any driver in this library. In rough order:
+
+1. **Facebook Business Account** — create or identify the one to use.
+2. **Business verification** — Meta confirms your business identity (can take days or weeks).
+3. **WhatsApp Business Account (WABA)** in Business Manager.
+4. **Add a phone number** — new number or port an existing one.
+5. **Register a Meta for Developers app**, add the **WhatsApp product**.
+6. **Permanent access token** — generate via System Users (tokens from the test console expire in 24h).
+7. **Phone number ID** and **WABA ID** from the WhatsApp app dashboard.
+
+```go
+import "github.com/gopackx/go-notification/channel/whatsapp/meta"
+
+notifier.RegisterChannel("whatsapp", meta.New(meta.Config{
+    AccessToken:   os.Getenv("WHATSAPP_META_TOKEN"),
+    PhoneNumberID: "1234567890",
+    APIVersion:    "v20.0",
+}))
+```
+
+## Configuration reference
+
+| Field           | Type     | Required | Description                                                   |
+|-----------------|----------|----------|---------------------------------------------------------------|
+| `AccessToken`   | `string` | yes      | Permanent access token from a System User.                    |
+| `PhoneNumberID` | `string` | yes      | Your WhatsApp-registered phone number ID.                      |
+| `APIVersion`    | `string` | no       | Graph API version, e.g. `"v20.0"`. Default: latest supported.  |
+| `Timeout`       | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
+
+## Templates
+
+Same as Twilio — pre-approved templates are required for business-initiated messages. Manage them in WhatsApp Manager.
+
+## Webhooks
+
+This driver only sends. To receive delivery/read receipts and inbound messages, configure a webhook in your Meta app and handle it in your own HTTP route — the webhook URL must be HTTPS and respond to Meta's verification handshake.
+
+## Twilio vs. Meta Cloud API
+
+| Factor                | Twilio WhatsApp                      | Meta Cloud API                         |
+|-----------------------|--------------------------------------|----------------------------------------|
+| Setup complexity      | Easier (Twilio handles BSP layer)    | Harder (you do business verification)  |
+| Cost per message      | Twilio markup on Meta's price        | Raw Meta pricing                       |
+| Templates & features  | Same — both use official API         | Same — both use official API           |
+| Support               | Twilio support channels              | Meta for Developers (community-driven) |
+| Good for              | Smaller teams, SMS + WhatsApp stack  | High volume, in-house ops capacity     |
+
+## Troubleshooting
+
+- **Token expired** — test-console tokens last 24h. Generate a permanent token via System User → Generate Token.
+- **`(#131047) Re-engagement required`** — you've exceeded the 24h window; use a template.
+- **Template rejected** — Meta's approval team is strict on marketing-looking utility templates. Read their [policy docs](https://developers.facebook.com/docs/whatsapp/message-templates/guidelines/).
+- **Webhook not receiving events** — verify challenge token wasn't returned correctly during the subscription handshake.

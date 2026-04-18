@@ -1,0 +1,43 @@
+---
+title: Changelog
+description: Release history for go-notification.
+---
+
+All notable changes to **go-notification** are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project adheres to [semantic versioning](https://semver.org/) starting from v1.0.0.
+
+---
+
+## v1.0.0 — First public release
+
+### Core
+- Notifier with goroutine worker pool, retry, exponential backoff, rate limiting.
+- `Notification`, `Notifiable`, `Channel` interfaces.
+- Fluent message builders for email, WhatsApp, push, Slack, Telegram, SMS, database.
+- Broadcast (`SendMulti`) for fan-out to many recipients.
+- On-demand channel override at the call site.
+- Auto-redaction of API keys and tokens in logs.
+
+### Channels
+- **Email:** SMTP, Mailgun, SendGrid, AWS SES, Resend, Postmark, Mailtrap.
+- **WhatsApp:** WAHA, Fonnte, Wablas, Twilio, Meta Cloud API.
+- **SMS:** Twilio, Zenziva, Vonage (Nexmo), AWS SNS.
+- **Chat:** Slack, Telegram, Discord, Microsoft Teams.
+- **Push:** Firebase Cloud Messaging (FCM).
+- **Database:** In-app notifications for Postgres, MySQL, SQLite.
+- **Webhook:** Generic HTTP POST driver.
+
+### Documentation
+- Landing page + Phase 1 launch docs (17 pages).
+- Channel overview comparison tables.
+- SMTP port-blocking guide.
+- FAQ.
+
+---
+
+## How versions work
+
+The project follows [semantic versioning](https://semver.org/):
+
+- **Patch (1.0.x)** — bug fixes, doc updates, no API change.
+- **Minor (1.x.0)** — new drivers, new features, backwards-compatible.
+- **Major (x.0.0)** — breaking API changes. Reserved for genuine incompatibilities; we try hard to avoid them.

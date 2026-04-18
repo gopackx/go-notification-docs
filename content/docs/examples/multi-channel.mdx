@@ -1,0 +1,144 @@
+---
+title: Multi-Channel Notification
+description: One notification, fanned out to email, WhatsApp, and the database in parallel.
+---
+
+The appeal of a unified notification library is that one `Send()` reaches the user everywhere. This example shows an `OrderShipped` going to mail + WhatsApp + database in one call.
+
+## Setup
+
+```go
+import (
+    "context"
+    "log"
+    "os"
+
+    "github.com/gopackx/go-notification/notification"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+    "github.com/gopackx/go-notification/channel/whatsapp/waha"
+    "github.com/gopackx/go-notification/channel/database"
+    "github.com/gopackx/go-notification/message/mail"
+    "github.com/gopackx/go-notification/message/whatsapp"
+
+    "database/sql"
+    _ "github.com/lib/pq"
+)
+
+type User struct {
+    ID            int64
+    Name          string
+    Email         string
+    Phone         string // E.164
+    WantsMail     bool
+    WantsWhatsApp bool
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    switch channel {
+    case "mail":     return u.Email
+    case "whatsapp": return u.Phone
+    case "database": return u.ID
+    }
+    return nil
+}
+```
+
+## Notification
+
+```go
+type OrderShipped struct {
+    OrderID     string
+    TrackingURL string
+}
+
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    u := notifiable.(User)
+    channels := []string{"database"} // always in-app
+    if u.WantsMail     { channels = append(channels, "mail") }
+    if u.WantsWhatsApp { channels = append(channels, "whatsapp") }
+    return channels
+}
+
+func (n OrderShipped) ToMail(_ notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order shipped").
+        Greeting("Hey,").
+        Line("Your order " + n.OrderID + " is on its way.").
+        Action("Track package", n.TrackingURL)
+}
+
+func (n OrderShipped) ToWhatsApp(_ notification.Notifiable) *whatsapp.Message {
+    return whatsapp.NewMessage().
+        Text("📦 Your order *" + n.OrderID + "* shipped. Track it: " + n.TrackingURL)
+}
+
+func (n OrderShipped) ToDatabase(_ notification.Notifiable) map[string]any {
+    return map[string]any{
+        "type":         "order.shipped",
+        "order_id":     n.OrderID,
+        "tracking_url": n.TrackingURL,
+    }
+}
+```
+
+## Wiring the notifier
+
+```go
+func main() {
+    db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+    if err != nil { panic(err) }
+
+    notifier := notification.New(notification.Config{
+        OnError: func(_ context.Context, err notification.Error) {
+            log.Printf("send failed: channel=%s err=%v", err.Channel, err.Err)
+        },
+    })
+
+    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+        Domain: "mg.example.com",
+        APIKey: os.Getenv("MAILGUN_API_KEY"),
+        From:   "noreply@example.com",
+    }))
+
+    notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+        BaseURL:   "http://localhost:3000",
+        APIKey:    os.Getenv("WAHA_API_KEY"),
+        SessionID: "default",
+    }))
+
+    dbChannel := database.New(database.Config{
+        DB:     db,
+        Driver: database.DriverPostgres,
+    })
+    if err := dbChannel.AutoMigrate(context.Background()); err != nil {
+        panic(err)
+    }
+    notifier.RegisterChannel("database", dbChannel)
+
+    user := User{
+        ID: 1, Name: "Dani", Email: "dani@example.com",
+        Phone: "+628123456789",
+        WantsMail: true, WantsWhatsApp: true,
+    }
+
+    ctx := context.Background()
+    if err := notifier.Send(ctx, user, OrderShipped{
+        OrderID: "A-1024",
+        TrackingURL: "https://example.com/track/A-1024",
+    }); err != nil {
+        log.Fatal(err)
+    }
+
+    notifier.Close(ctx)
+}
+```
+
+## What happens on send
+
+1. `Via()` returns `["database", "mail", "whatsapp"]` based on `user.WantsMail` and `user.WantsWhatsApp`.
+2. Worker pool enqueues three sends, one per channel.
+3. Each worker calls `RouteNotificationFor(channel)` to get the address, then the corresponding `To<Channel>()` method to render.
+4. All three APIs are hit in parallel.
+5. On any failure, retry kicks in per that channel. Others continue unaffected.
+
+Total wall time: `max(mail_latency, whatsapp_latency, db_insert_latency)`, not the sum.

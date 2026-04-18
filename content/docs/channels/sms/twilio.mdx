@@ -1,0 +1,63 @@
+---
+title: Twilio SMS
+description: Global SMS via Twilio. The default choice for most production SMS.
+---
+
+**Twilio** has the broadest global SMS coverage, a mature deliverability team, and strong APIs for regulated use cases like OTP (Twilio Verify sits on top but this library uses the plain Messaging API).
+
+## Pricing
+
+- **Trial** — free credits to test.
+- **Per-message** — starts at $0.0075/msg in the US, scales up for international. Full matrix: https://www.twilio.com/en-us/sms/pricing.
+
+## Setup
+
+1. Create a Twilio account.
+2. **Buy a phone number** or register a short code / alphanumeric sender.
+3. Copy **Account SID**, **Auth Token**, and the sending number.
+
+```go
+import "github.com/gopackx/go-notification/channel/sms/twilio"
+
+notifier.RegisterChannel("sms", twilio.New(twilio.Config{
+    AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
+    AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
+    From:       "+14155238886",
+}))
+```
+
+## Configuration reference
+
+| Field        | Type     | Required | Description                                                          |
+|--------------|----------|----------|----------------------------------------------------------------------|
+| `AccountSID` | `string` | yes      | Twilio Account SID.                                                   |
+| `AuthToken`  | `string` | yes      | Auth Token. Rotate on compromise.                                     |
+| `From`       | `string` | yes      | E.164 number or registered alphanumeric sender ID (country-dependent). |
+| `Timeout`    | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                                |
+
+## Sending
+
+```go
+func (n OTP) Via(u notification.Notifiable) []string {
+    return []string{"sms"}
+}
+
+func (n OTP) ToSms(u notification.Notifiable) *sms.Message {
+    return sms.NewMessage().
+        Text("Your code: " + n.Code)
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "sms" {
+        return u.Phone // E.164 — e.g. "+628123456789"
+    }
+    return nil
+}
+```
+
+## Troubleshooting
+
+- **`21211: invalid 'To' number`** — not in E.164 format, or a landline that Twilio can't reach.
+- **`21612: not a valid message sending phone number`** — your `From` isn't SMS-enabled, or the destination country requires a specific sender type (short code vs. long code).
+- **Works in sandbox, fails in prod** — trial accounts can only message verified numbers. Upgrade to paid before launching.
+- **Message never arrives, no error** — sometimes carriers silently drop messages flagged as spam. Check **Messaging → Logs** in the console for a `delivered` status.

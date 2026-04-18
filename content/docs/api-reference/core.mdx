@@ -1,0 +1,133 @@
+---
+title: Core (Notifier, Config)
+description: The Notifier type and its Config. Every go-notification app starts here.
+---
+
+## `notification.New`
+
+```go
+func New(cfg Config) *Notifier
+```
+
+Creates a new notifier. The returned `*Notifier` is safe for concurrent use and should be a long-lived singleton in your application.
+
+## `Notifier` methods
+
+```go
+func (n *Notifier) RegisterChannel(name string, ch Channel)
+func (n *Notifier) Send(ctx context.Context, to Notifiable, notif Notification) error
+func (n *Notifier) SendMulti(ctx context.Context, to []Notifiable, notif Notification) error
+func (n *Notifier) SendOnDemand(ctx context.Context, routes OnDemand, notif Notification) error
+func (n *Notifier) SendTo(ctx context.Context, to Notifiable, routes OnDemand, notif Notification) error
+func (n *Notifier) Close(ctx context.Context) error
+```
+
+### RegisterChannel
+
+Register a driver under a name. Name can be anything — you reference it from `Notification.Via()`.
+
+### Send
+
+Dispatch a notification to one recipient. In async mode (default), returns immediately after enqueueing; errors surface via `OnError`. In sync mode, blocks until all channels complete and returns the first error.
+
+### SendMulti
+
+Same as `Send` but for many recipients. See [Broadcast](/docs/features/broadcast).
+
+### SendOnDemand
+
+Send without a `Notifiable` — pass raw routes per channel. See [On-Demand Channels](/docs/features/on-demand-channels).
+
+### Close
+
+Wait for the worker pool to drain and stop. Use with a context deadline to bound the wait.
+
+## `Config`
+
+```go
+type Config struct {
+    Async        bool
+    WorkerCount  int
+    QueueSize    int
+
+    MaxRetries    int
+    RetryDelay    time.Duration
+    RetryBackoff  float64
+    RetryMaxDelay time.Duration
+    RetryJitter   float64
+    RetryPolicy   RetryPolicy    // optional — overrides MaxRetries/RetryDelay/etc.
+
+    RateLimit       float64       // global ops/sec
+    RateLimitBurst  int
+
+    TemplateRegistry TemplateRegistry
+
+    OnError func(ctx context.Context, err Error)
+    OnRetry func(ctx context.Context, attempt int, err error)
+    OnSent  func(ctx context.Context, info SentInfo)
+
+    Logger   Logger // optional; defaults to a redacting slog handler
+    Clock    Clock  // optional; swap for tests
+}
+```
+
+## `Error`
+
+```go
+type Error struct {
+    Channel           string
+    NotificationType  string
+    Notifiable        Notifiable
+    Err               error
+    Attempts          int
+}
+```
+
+Passed to `OnError`. Includes everything you need to log, alert, or feed into a dead-letter store.
+
+## `SentInfo`
+
+```go
+type SentInfo struct {
+    Channel           string
+    NotificationType  string
+    Notifiable        Notifiable
+    Duration          time.Duration
+    Attempts          int
+    ProviderMessageID string // if the driver returns one (e.g. Mailgun message ID)
+}
+```
+
+Passed to `OnSent` after a successful send. Great for observability metrics and audit logs.
+
+## `OnDemand`
+
+```go
+type OnDemand map[string]any
+```
+
+Keys are channel names. Values are whatever `RouteNotificationFor(channel)` would normally return.
+
+## Recommended singleton pattern
+
+```go
+var (
+    notifier     *notification.Notifier
+    notifierOnce sync.Once
+)
+
+func Notifier() *notification.Notifier {
+    notifierOnce.Do(func() {
+        notifier = notification.New(notification.Config{
+            OnError: func(ctx context.Context, err notification.Error) {
+                slog.Error("notification failed", "err", err.Err)
+            },
+        })
+        // Register channels once at boot
+        notifier.RegisterChannel("mail", /* ... */)
+    })
+    return notifier
+}
+```
+
+Avoid creating notifiers per request — every instance starts its own worker pool.

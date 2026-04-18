@@ -1,0 +1,10 @@
+{
+  "title": "API Reference",
+  "pages": [
+    "core",
+    "notification-interface",
+    "notifiable-interface",
+    "channel-interface",
+    "message-types"
+  ]
+}

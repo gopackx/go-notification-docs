@@ -1,0 +1,57 @@
+---
+title: Vonage (Nexmo)
+description: Vonage API — formerly Nexmo. Similar to Twilio, solid global coverage.
+---
+
+**Vonage** (previously Nexmo) is a direct Twilio competitor. Similar coverage, similar pricing. Some regions are cheaper on Vonage, others on Twilio — worth comparing if you're at scale.
+
+## Pricing
+
+- **Trial** — free credits.
+- **Per-message** — similar band to Twilio, starts at a few cents per SMS. Country matrix: https://developer.vonage.com/en/messaging/sms/overview.
+
+## Setup
+
+1. Create an account at https://vonage.com.
+2. Copy **API key** and **API secret** from the dashboard.
+3. Optionally buy a sender number; some countries also allow alphanumeric senders.
+
+```go
+import "github.com/gopackx/go-notification/channel/sms/vonage"
+
+notifier.RegisterChannel("sms", vonage.New(vonage.Config{
+    APIKey:    os.Getenv("VONAGE_API_KEY"),
+    APISecret: os.Getenv("VONAGE_API_SECRET"),
+    From:      "YourBrand", // or +E.164 number, country-dependent
+}))
+```
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                       |
+|-------------|----------|----------|-------------------------------------------------------------------|
+| `APIKey`    | `string` | yes      | Vonage API key.                                                    |
+| `APISecret` | `string` | yes      | Vonage API secret. Rotate on compromise.                           |
+| `From`      | `string` | yes      | Sender ID — alphanumeric (where allowed) or E.164 number.          |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
+
+## Fallback pattern
+
+A common high-reliability setup: Twilio as primary, Vonage as backup.
+
+```go
+notifier.RegisterChannel("sms",         twilio.New(/* ... */))
+notifier.RegisterChannel("sms-backup",  vonage.New(/* ... */))
+
+func (n OTP) Via(u notification.Notifiable) []string {
+    return []string{"sms"}
+}
+
+// In your OnError handler, trigger a retry via "sms-backup"
+```
+
+## Troubleshooting
+
+- **`delivery-status: Undeliverable`** — country/carrier block. Try a different sender type (short code vs alphanumeric).
+- **Alphanumeric sender rejected** — US and Canada don't allow alphanumeric senders. Use a proper long code or toll-free.
+- **Billing surprise** — some countries (Russia, parts of the Middle East) are 10× typical per-message cost. Check the rate sheet before rolling out.

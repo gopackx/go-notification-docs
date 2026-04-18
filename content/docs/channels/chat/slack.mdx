@@ -1,0 +1,93 @@
+---
+title: Slack
+description: Post notifications to Slack channels via Incoming Webhooks or the chat.postMessage API.
+---
+
+## Two ways to send
+
+- **Incoming Webhooks** — one URL, posts to one channel. Simplest to set up.
+- **Bot token (`chat.postMessage`)** — one token, can post to many channels (if invited). Needed for DMs, threads, updates.
+
+Both are supported.
+
+## Option A — Incoming Webhook
+
+1. Go to https://api.slack.com/apps → **Create New App** → pick a workspace.
+2. Enable **Incoming Webhooks**.
+3. **Add New Webhook to Workspace**, pick a channel.
+4. Copy the webhook URL.
+
+```go
+import "github.com/gopackx/go-notification/channel/chat/slack"
+
+notifier.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
+    URL: os.Getenv("SLACK_WEBHOOK_URL"),
+}))
+```
+
+## Option B — Bot token
+
+1. In the same app settings, enable **Bots**.
+2. Add OAuth scopes: `chat:write`, `chat:write.public`.
+3. Install the app to your workspace and copy the **Bot User OAuth Token** (starts with `xoxb-`).
+4. Invite the bot into any channel it should post to (`/invite @YourBot`).
+
+```go
+notifier.RegisterChannel("slack", slack.NewBot(slack.BotConfig{
+    Token:          os.Getenv("SLACK_BOT_TOKEN"),
+    DefaultChannel: "#alerts",
+}))
+```
+
+## Sending
+
+```go
+func (n DeployFailed) Via(u notification.Notifiable) []string {
+    return []string{"slack"}
+}
+
+func (n DeployFailed) ToSlack(u notification.Notifiable) *slack.Message {
+    return slack.NewMessage().
+        Text("Deploy failed: " + n.Service).
+        Attachment(
+            slack.NewAttachment().
+                Color("danger").
+                Field("Commit", n.Commit, true).
+                Field("Actor",  n.Actor,  true),
+        )
+}
+```
+
+For routing per recipient (e.g. DM a specific user), return the user ID or channel ID from `RouteNotificationFor("slack")`:
+
+```go
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "slack" {
+        return u.SlackUserID // "U01ABCD..." for DMs, or "#channel-name"
+    }
+    return nil
+}
+```
+
+## Configuration reference
+
+### `WebhookConfig`
+
+| Field     | Type     | Required | Description                                                       |
+|-----------|----------|----------|-------------------------------------------------------------------|
+| `URL`     | `string` | yes      | Incoming webhook URL from the Slack app settings.                 |
+| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
+
+### `BotConfig`
+
+| Field            | Type     | Required | Description                                                |
+|------------------|----------|----------|------------------------------------------------------------|
+| `Token`          | `string` | yes      | Bot User OAuth Token (`xoxb-...`).                         |
+| `DefaultChannel` | `string` | no       | Fallback channel if `RouteNotificationFor` returns empty. |
+| `Timeout`        | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                     |
+
+## Troubleshooting
+
+- **`channel_not_found`** — bot isn't invited, or channel ID is wrong. Invite with `/invite @YourBot`.
+- **`not_allowed_token_type`** — you passed a user token (`xoxp-`) where a bot token (`xoxb-`) was expected.
+- **Webhook returns 200 but nothing appears** — webhook is for a different workspace or the channel was archived.

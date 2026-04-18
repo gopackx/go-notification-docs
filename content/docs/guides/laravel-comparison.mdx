@@ -1,0 +1,144 @@
+---
+title: Coming from Laravel
+description: API mapping for developers who know Laravel Notifications.
+---
+
+If you've used **Laravel Notifications**, you already know go-notification's model. The abstractions are nearly 1:1 — the differences come from Go being a statically-typed language without reflection magic.
+
+## Side-by-side mapping
+
+| Laravel                              | go-notification                              |
+|--------------------------------------|----------------------------------------------|
+| `use Notifiable` trait                | implement `Notifiable` interface              |
+| `$user->notify(new OrderShipped)`    | `notifier.Send(ctx, user, OrderShipped{})`   |
+| `via()` method                        | `Via()` method                                |
+| `toMail()`                            | `ToMail()`                                    |
+| `toArray()` (for database)            | `ToDatabase()`                                |
+| `toVonage()` (SMS)                    | `ToSms()`                                     |
+| `toSlack()`                           | `ToSlack()`                                   |
+| `config/mail.php` config array        | `mailgun.Config{}` struct                     |
+| `php artisan notifications:table`     | `notifier.AutoMigrate(ctx)`                   |
+| `$user->notifications`                | `dbChannel.Query(ctx, filter)`                |
+| `$user->unreadNotifications`          | `dbChannel.Unread(ctx, type, id)`             |
+| `markAsRead()`                        | `dbChannel.MarkAsRead(ctx, id)`               |
+| `markAllAsRead()`                     | `dbChannel.MarkAllAsRead(ctx, type, id)`      |
+| `Notification::route(...)->notify()`  | `notifier.SendOnDemand(ctx, routes, n)`       |
+| `routeNotificationFor('mail')`        | `RouteNotificationFor("mail")`                |
+| `ShouldQueue` interface               | `Config.Async = true` (default on)            |
+| `queueable` delay                      | not yet — use external scheduler (cron, Temporal) |
+| `Notifications::fake()` in tests      | register a test channel that captures calls  |
+| `shouldSend()` method                  | do the check inside `Via()` (return empty slice) |
+
+## Minimal example — before and after
+
+**Laravel:**
+
+```php
+// app/Notifications/OrderShipped.php
+class OrderShipped extends Notification
+{
+    public function via($notifiable): array
+    {
+        return ['mail', 'database'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Your order shipped')
+            ->line('Your order is on its way.')
+            ->action('Track', 'https://...');
+    }
+
+    public function toArray($notifiable): array
+    {
+        return ['order_id' => $this->orderID];
+    }
+}
+
+$user->notify(new OrderShipped($orderID));
+```
+
+**go-notification:**
+
+```go
+type OrderShipped struct { OrderID string }
+
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    return []string{"mail", "database"}
+}
+
+func (n OrderShipped) ToMail(notifiable notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order shipped").
+        Line("Your order is on its way.").
+        Action("Track", "https://...")
+}
+
+func (n OrderShipped) ToDatabase(notifiable notification.Notifiable) map[string]any {
+    return map[string]any{"order_id": n.OrderID}
+}
+
+notifier.Send(ctx, user, OrderShipped{OrderID: orderID})
+```
+
+Same idea, same shape. Go just makes types explicit.
+
+## Key differences
+
+### No service container
+
+Laravel's container resolves drivers and dependencies for you. In Go, you register channels manually on a `Notifier` singleton at app boot. Slightly more boilerplate; dramatically more discoverable ("where is the mail driver configured?" → one file, one registration).
+
+### No automatic model relation
+
+In Laravel, the `Notifiable` trait adds `$user->notifications` as an Eloquent relation. In Go, you query the database channel explicitly:
+
+```go
+items, _ := dbChannel.Query(ctx, database.Filter{
+    NotifiableType: "user",
+    NotifiableID:   user.ID,
+})
+```
+
+More verbose; no ORM coupling.
+
+### `Via()` receives the notifiable
+
+Both libraries do this, but Laravel's magic method resolution means you rarely use the argument. In Go you'll type-assert it for real:
+
+```go
+func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
+    u := notifiable.(User)
+    if !u.WantsEmail { return []string{"database"} }
+    return []string{"database", "mail"}
+}
+```
+
+### No queues out of the box
+
+Laravel has `ShouldQueue` for deferred dispatch via Horizon / Redis queues. go-notification has an **in-process worker pool** by default — suitable for most apps, but not durable across restarts. If you need durability, put a real queue (Redis Streams, NATS, SQS, Temporal) **in front** of go-notification; do the `Send()` call inside the worker.
+
+### No locale-aware `HasLocalePreference`
+
+Laravel picks a locale from `HasLocalePreference` on the notifiable and auto-translates. Not built in here — pass the locale into your notification struct or read it from the notifiable inside `ToMail()`.
+
+### No channel manager aliases
+
+Laravel lets you alias channels (`'mail'` → `SlackChannel::class`). go-notification just calls the channel by the name you registered it under. It's less indirection.
+
+## Things that work the same
+
+- **Fluent mail builder** — Line/Action/Greeting/Salutation, same semantics.
+- **Per-channel routing** — `RouteNotificationFor(channel)` matches `routeNotificationFor($channel)`.
+- **On-demand notifications** — `Notification::route(...)` maps to `SendOnDemand(ctx, routes, n)`.
+- **Multi-channel dispatch** — one `Send` hits all channels from `Via()` in parallel.
+- **Database table structure** — same columns (id, type, notifiable_type, notifiable_id, data, read_at, created_at).
+
+## When NOT to use this library
+
+If you're coming from Laravel, be honest about what you liked:
+
+- **If you loved Laravel's service container auto-wiring**, you'll miss it. Go doesn't have an equivalent worth importing for this.
+- **If you need Octane's in-memory caching** of notification instances, you already have that effectively in Go — notifiers are singletons, drivers don't churn.
+- **If you depend on specific community channel packages** for obscure providers, check what's built in here first. Seven email drivers, five WhatsApp drivers, etc. — most of the Laravel package ecosystem's popular channels are covered.

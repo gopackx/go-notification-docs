@@ -1,0 +1,121 @@
+---
+title: Email Templates
+description: Go html/text templates, compiled at app boot and rendered per-send.
+---
+
+For emails beyond simple line/action patterns, use Go's standard templates. The mail message builder has `.Template(name, data)` to render.
+
+## Setting up a template registry
+
+```go
+import (
+    "embed"
+    "github.com/gopackx/go-notification/template"
+)
+
+//go:embed templates/*.html
+var templatesFS embed.FS
+
+registry, err := template.NewFromFS(templatesFS, "templates/*.html")
+if err != nil { panic(err) }
+
+notifier := notification.New(notification.Config{
+    TemplateRegistry: registry,
+})
+```
+
+## Using a template in a notification
+
+```go
+func (n Welcome) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Welcome to the app, " + u.(User).Name).
+        Template("welcome.html", map[string]any{
+            "name":      u.(User).Name,
+            "dashboard": "https://app.example.com/dashboard",
+            "year":      time.Now().Year(),
+        })
+}
+```
+
+## Template file example
+
+```html
+<!-- templates/welcome.html -->
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif">
+  <h1>Welcome, {{ .name }}!</h1>
+  <p>Click below to get started.</p>
+  <p><a href="{{ .dashboard }}">Open dashboard</a></p>
+  <hr>
+  <small>© {{ .year }} Example Inc.</small>
+</body>
+</html>
+```
+
+## HTML and text together
+
+Good transactional email includes both HTML and plain-text versions. Use a `.txt` file alongside:
+
+```go
+mail.NewMessage().
+    Template("welcome.html", data).
+    TextTemplate("welcome.txt", data)
+```
+
+The driver sends both as a multipart/alternative MIME message — clients choose which to render.
+
+## Layouts / partials
+
+Standard Go template features work:
+
+```go
+registry, _ := template.New().
+    ParseFS(templatesFS, "templates/layouts/*.html", "templates/emails/*.html")
+```
+
+And in your email:
+
+```html
+{{ define "welcome.html" }}
+{{ template "layout.html" . }}
+{{ end }}
+
+{{ define "content" }}
+<h1>Welcome, {{ .name }}</h1>
+{{ end }}
+```
+
+## Internationalization
+
+Pass the locale into the data map and let your templates branch:
+
+```go
+mail.NewMessage().Template("welcome.html", map[string]any{
+    "name":   user.Name,
+    "locale": user.Locale,
+})
+```
+
+Or register separate templates per locale (`welcome.en.html`, `welcome.id.html`) and pick the name in `ToMail`.
+
+## External template engines
+
+The `TemplateRegistry` is an interface. You can implement it with [Handlebars](https://github.com/aymerick/raymond), [MJML](https://mjml.io/) (compile to HTML offline), or [React Email](https://react.email/) (render Node → HTML at build time, embed as strings):
+
+```go
+type engine interface {
+    Render(name string, data any) (string, error)
+}
+
+type myRegistry struct { e engine }
+
+func (r myRegistry) Render(name string, data any) (string, error) {
+    return r.e.Render(name, data)
+}
+```
+
+## Template caching
+
+Templates are parsed once at boot. For local development, you can wrap the registry in a dev-mode variant that re-parses on each render — but avoid that in production (adds latency and disk I/O per send).

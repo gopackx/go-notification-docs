@@ -1,0 +1,58 @@
+---
+title: Fonnte
+description: Indonesian WhatsApp API — cheap, fast to set up, unofficial.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Fonnte** is a popular Indonesian WhatsApp gateway. It's cheap, the dashboard is in Bahasa Indonesia, and setup is minutes instead of weeks.
+
+<Callout type="warn" title="Unofficial API">
+Fonnte uses the unofficial WhatsApp Web protocol. Against WhatsApp Terms of Service — number ban is possible. Fine for low-volume ops, internal tools, and MVPs; not recommended for mission-critical customer comms.
+</Callout>
+
+## Pricing
+
+- **Trial** — free, limited messages for evaluation.
+- **Paid** — from around **Rp 25,000 / month** (≈ $1.50 USD) for basic plans. Pricing scales with message volume and number of devices.
+- Check https://fonnte.com/pricing for current rates.
+
+## Setup
+
+1. Register at https://fonnte.com.
+2. Add a device and scan the QR code with your WhatsApp phone.
+3. Copy the **device token** from the Fonnte dashboard.
+
+```go
+import "github.com/gopackx/go-notification/channel/whatsapp/fonnte"
+
+notifier.RegisterChannel("whatsapp", fonnte.New(fonnte.Config{
+    Token: os.Getenv("FONNTE_TOKEN"),
+}))
+```
+
+## Configuration reference
+
+| Field     | Type     | Required | Description                                                         |
+|-----------|----------|----------|---------------------------------------------------------------------|
+| `Token`   | `string` | yes      | Fonnte device token. One token per connected WhatsApp number.       |
+| `BaseURL` | `string` | no       | Override the API base URL. Default: `https://api.fonnte.com`.       |
+| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                              |
+
+## Sending
+
+```go
+func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
+    return whatsapp.NewMessage().
+        Text("Halo! Pesanan " + n.OrderID + " sudah dikirim.")
+}
+```
+
+Recipients from `RouteNotificationFor("whatsapp")` should be in E.164 format (`628123456789`) or local format (`08123456789`) — Fonnte accepts both for Indonesian numbers.
+
+## Tips
+
+- **One token per number.** If you want redundancy, register multiple devices and round-robin between channel names (`whatsapp-a`, `whatsapp-b`).
+- **Rate limit yourself.** Don't blast messages — that's the fastest way to get the number flagged by WhatsApp.
+- **Respect opt-out.** Especially for marketing, always honor user opt-outs, or you'll get reported and lose the number.
+- **Consider Meta Cloud API** if this becomes customer-critical. The migration path is a `Via()` change plus a new channel registration.

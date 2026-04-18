@@ -1,0 +1,81 @@
+---
+title: Mailtrap
+description: One vendor for both testing (sandbox inbox) and production sending.
+---
+
+**Mailtrap** has two products:
+
+- **Email Testing (Sandbox)** — catches outgoing email in a fake inbox so you can inspect what your app sends without emailing real users.
+- **Email Sending** — a production transactional sending service, like Mailgun/SendGrid.
+
+The go-notification driver supports both. Most teams register the sandbox inbox for dev/staging and the production sender for prod, using different env vars.
+
+## Pricing
+
+- **Sandbox** — free for up to 100 emails captured/month; paid tiers add more inboxes and higher volumes.
+- **Sending** — from $15/month for 10,000 emails.
+
+Exact tiers: https://mailtrap.io/pricing.
+
+## Setup (Sandbox for testing)
+
+1. Create an inbox at https://mailtrap.io → **Email Testing**.
+2. Copy the **API credentials**: `Inbox ID` and `API Token`.
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/mailtrap"
+
+notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
+    Mode:    mailtrap.ModeSandbox,
+    APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
+    InboxID: "1234567",
+    From:    "noreply@example.com",
+}))
+```
+
+## Setup (Production sending)
+
+1. In **Email Sending**, add and verify your domain.
+2. Create an API key.
+
+```go
+notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
+    Mode:   mailtrap.ModeProduction,
+    APIKey: os.Getenv("MAILTRAP_API_TOKEN"),
+    From:   "noreply@example.com",
+}))
+```
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                      |
+|-------------|----------|----------|------------------------------------------------------------------|
+| `Mode`      | `Mode`   | yes      | `ModeSandbox` or `ModeProduction`.                               |
+| `APIKey`    | `string` | yes      | Mailtrap API token.                                              |
+| `InboxID`   | `string` | sandbox  | Required in sandbox mode. Ignored in production.                 |
+| `From`      | `string` | yes      | Sender address. In sandbox, anything works; in prod, must be verified. |
+| `FromName`  | `string` | no       | Display name.                                                    |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Dev → staging → prod pattern
+
+```go
+mode := mailtrap.ModeSandbox
+if os.Getenv("APP_ENV") == "production" {
+    mode = mailtrap.ModeProduction
+}
+
+notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
+    Mode:   mode,
+    APIKey: os.Getenv("MAILTRAP_API_TOKEN"),
+    // InboxID only used in sandbox mode
+    InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
+    From:    "noreply@example.com",
+}))
+```
+
+## Troubleshooting
+
+- **401 on sandbox** — wrong API token OR the token is for a different Mailtrap product (sending vs testing). Check the token's scope in the dashboard.
+- **Emails don't appear in sandbox inbox** — wrong `InboxID`, or mode is set to production.
+- **Production send rejected** — domain not verified or account still in trial.

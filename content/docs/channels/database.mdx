@@ -1,0 +1,109 @@
+---
+title: Database (In-App)
+description: Persist notifications to your database for in-app notification centers. Postgres, MySQL, and SQLite supported.
+---
+
+The database channel stores notifications in a table so your app can show an in-app notification center — unread counts, mark-as-read, and a query API — without wiring anything external.
+
+## Supported databases
+
+- **PostgreSQL** (9.6+)
+- **MySQL** (5.7+ / MariaDB 10.3+)
+- **SQLite** (3.x)
+
+All three use the same driver. The channel accepts any `*sql.DB`.
+
+## Setup
+
+```go
+import (
+    "database/sql"
+    _ "github.com/lib/pq"
+    "github.com/gopackx/go-notification/channel/database"
+)
+
+db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+if err != nil { panic(err) }
+
+dbChannel := database.New(database.Config{
+    DB:     db,
+    Driver: database.DriverPostgres, // or DriverMySQL, DriverSQLite
+    Table:  "notifications",         // default: "notifications"
+})
+
+notifier.RegisterChannel("database", dbChannel)
+```
+
+## Auto migration
+
+The driver can create the table for you:
+
+```go
+if err := dbChannel.AutoMigrate(ctx); err != nil {
+    panic(err)
+}
+```
+
+Or run the SQL yourself from the driver's `Schema()` output — useful when migrations are managed by a tool like `golang-migrate`.
+
+## Sending
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"database"}
+}
+
+func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any {
+    return map[string]any{
+        "type":     "order.shipped",
+        "order_id": n.OrderID,
+        "message":  "Your order has shipped.",
+    }
+}
+```
+
+The resulting row stores: an auto `id`, `type` (from your map or the notification's type name), `notifiable_type`/`notifiable_id` (from the recipient), a JSON `data` blob, `read_at` (nullable), and `created_at`.
+
+## Query API
+
+Everything your in-app notification center needs is on the channel itself:
+
+```go
+// Latest 20, all notifications for this user
+items, err := dbChannel.Query(ctx, database.Filter{
+    NotifiableType: "user",
+    NotifiableID:   user.ID,
+    Limit:          20,
+})
+
+// Unread count
+n, err := dbChannel.UnreadCount(ctx, "user", user.ID)
+
+// Only unread
+items, err := dbChannel.Unread(ctx, "user", user.ID)
+
+// Mark one as read
+err := dbChannel.MarkAsRead(ctx, notificationID)
+
+// Mark all as read
+err := dbChannel.MarkAllAsRead(ctx, "user", user.ID)
+```
+
+## Configuration reference
+
+| Field    | Type          | Required | Description                                                    |
+|----------|---------------|----------|----------------------------------------------------------------|
+| `DB`     | `*sql.DB`     | yes      | Connected database handle. You own its lifecycle.              |
+| `Driver` | `Driver` enum | yes      | `DriverPostgres`, `DriverMySQL`, or `DriverSQLite`.            |
+| `Table`  | `string`      | no       | Override table name. Default: `"notifications"`.                |
+
+## Why no ORM?
+
+This is deliberate. go-notification uses `database/sql` only — no GORM, no Bun, no Ent. You can use your own ORM for the rest of your app; the database channel won't interfere because it owns its own table and queries.
+
+## Pairing with real-time push
+
+The database channel only writes to the DB. For real-time updates (a bell icon that updates without a refresh), combine it with:
+
+- A second channel like WebSocket or server-sent events triggered on the same notification.
+- Or poll the `UnreadCount` endpoint on a timer from the client.

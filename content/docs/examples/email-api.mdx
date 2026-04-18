@@ -1,0 +1,126 @@
+---
+title: Email via API (Mailgun / SendGrid)
+description: A complete minimal program that sends email via an API-based driver.
+---
+
+This is the recommended production setup — API-based driver instead of SMTP, so it works on any cloud host (see [SMTP Port Blocking](/docs/guides/smtp-cloud-issues)).
+
+## Mailgun variant
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+    "time"
+
+    "github.com/gopackx/go-notification/notification"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+    "github.com/gopackx/go-notification/message/mail"
+)
+
+type User struct {
+    Name  string
+    Email string
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "mail" { return u.Email }
+    return nil
+}
+
+type PasswordReset struct {
+    ResetURL string
+}
+
+func (n PasswordReset) Via(_ notification.Notifiable) []string { return []string{"mail"} }
+
+func (n PasswordReset) ToMail(notifiable notification.Notifiable) *mail.Message {
+    u := notifiable.(User)
+    return mail.NewMessage().
+        Subject("Reset your password").
+        Greeting("Hi " + u.Name + ",").
+        Line("We received a request to reset your password.").
+        Action("Reset password", n.ResetURL).
+        Line("This link expires in 30 minutes. If you didn't request this, ignore this email.")
+}
+
+func main() {
+    notifier := notification.New(notification.Config{})
+
+    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+        Domain: "mg.example.com",
+        APIKey: os.Getenv("MAILGUN_API_KEY"),
+        From:   "no-reply@example.com",
+    }))
+
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    user := User{Name: "Dani", Email: "dani@example.com"}
+    if err := notifier.Send(ctx, user, PasswordReset{
+        ResetURL: "https://app.example.com/reset?token=abc",
+    }); err != nil {
+        log.Fatal(err)
+    }
+    notifier.Close(ctx)
+}
+```
+
+## SendGrid variant
+
+Swap the channel registration only — notification code is identical.
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/sendgrid"
+
+notifier.RegisterChannel("mail", sendgrid.New(sendgrid.Config{
+    APIKey: os.Getenv("SENDGRID_API_KEY"),
+    From:   "no-reply@example.com",
+}))
+```
+
+## Env setup
+
+```bash
+# Mailgun
+export MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# or SendGrid
+export SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+go run .
+```
+
+## Deliverability checklist
+
+If your mail lands in spam:
+
+1. **Verify SPF, DKIM, and DMARC** on your sending domain. Both Mailgun and SendGrid walk you through this in their dashboards — don't skip any record.
+2. **Use a dedicated subdomain** for transactional mail (e.g. `mg.example.com` or `mail.example.com`). Reputation on that subdomain is independent of your main domain's web traffic.
+3. **Warm up** a new sending domain — start with low volume for the first 2–4 weeks and ramp gradually.
+4. **Handle bounces and complaints.** When the provider reports a hard bounce, mark that address as undeliverable in your DB and stop sending to it.
+5. **Avoid marketing-looking subject lines** for transactional mail — words like "FREE", "GUARANTEED", all-caps, or lots of emojis can trip spam filters.
+
+## Testing locally without sending
+
+Replace the driver with [Mailtrap](/docs/channels/email/mailtrap) in sandbox mode:
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/mailtrap"
+
+if os.Getenv("APP_ENV") == "production" {
+    notifier.RegisterChannel("mail", mailgun.New(/* ... */))
+} else {
+    notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
+        Mode:    mailtrap.ModeSandbox,
+        APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
+        InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
+        From:    "dev@example.com",
+    }))
+}
+```
+
+Mail in dev goes to a Mailtrap inbox; in prod, to real inboxes. No code change between environments.

@@ -1,0 +1,68 @@
+---
+title: Email Overview
+description: Seven email drivers from self-hosted SMTP to modern APIs. Pricing, deliverability, and the cloud port-blocking caveat.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+<Callout type="warn" title="SMTP port blocking on cloud">
+Most cloud providers (GCP, AWS, DigitalOcean, Azure) **block SMTP port 25** outbound. Port 587 is sometimes restricted too.
+
+If you're deploying on cloud, use an API-based driver (Mailgun, SendGrid, SES, Resend, Postmark, Mailtrap) instead of SMTP. API drivers use HTTPS (port 443) which is never blocked.
+
+See the full guide: **[SMTP Port Blocking on Cloud](/docs/guides/smtp-cloud-issues)**.
+</Callout>
+
+## Driver Comparison
+
+| Driver     | Free Tier   | Pricing        | Transport | Best For                              |
+|------------|-------------|----------------|-----------|---------------------------------------|
+| SMTP       | Self-hosted | —              | SMTP      | On-premise, corporate mail            |
+| Mailgun    | 100/day     | $0.80/1000     | API       | Startups, dev                         |
+| SendGrid   | 100/day     | From $19.95    | API       | Enterprise, compliance                |
+| AWS SES    | 3,000/mo    | $0.10/1000     | API       | High volume, AWS-resident stacks      |
+| Resend     | 3,000/mo    | From $20       | API       | Modern developer experience           |
+| Postmark   | 100/mo      | From $15       | API       | Best inbox deliverability             |
+| Mailtrap   | 1,000/mo    | From $15       | API       | Test + production in one vendor       |
+
+Free tiers change. Check each provider's pricing page before committing.
+
+## Quick Start
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/mailgun"
+
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: os.Getenv("MAILGUN_API_KEY"),
+    From:   "noreply@example.com",
+}))
+```
+
+Then return `"mail"` from your notification's `Via()` and implement `ToMail()`:
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"mail"}
+}
+
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order shipped").
+        Line("Hi, your order is on its way.").
+        Action("Track package", "https://example.com/track")
+}
+```
+
+## Choosing a driver
+
+The short version:
+
+- **Cloud deployment?** Use an API driver (Mailgun, SES, Resend, Postmark).
+- **Best deliverability?** Postmark.
+- **Cheapest at scale?** AWS SES ($0.10 per 1,000).
+- **Just starting?** Mailgun or Resend — both have generous free tiers.
+- **Testing?** Mailtrap sandbox, then flip the same account to production.
+- **On-premise / no cloud restrictions?** SMTP is fine.
+
+Long version with flowchart: **[Choosing an Email Driver](/docs/guides/choosing-email-driver)**.

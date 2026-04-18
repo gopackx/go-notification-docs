@@ -1,0 +1,66 @@
+---
+title: Microsoft Teams
+description: Post notifications into Teams channels via Incoming Webhooks or Workflow connectors.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Microsoft Teams** supports two webhook-style integrations. The classic one (**Office 365 Connector**) is being deprecated in favor of **Workflows / Power Automate**. Both work with this driver — the URL shape differs but the payload you produce does not.
+
+<Callout type="info" title="Deprecation note">
+Microsoft announced deprecation of Office 365 Connectors for Teams. New channels should use **Workflows** (Power Automate). Existing connector URLs continue to work, but won't be the default experience going forward. Check Microsoft's current guidance before committing.
+</Callout>
+
+## Setup — Workflow (recommended)
+
+1. In a Teams channel, click `⋯` → **Workflows**.
+2. Pick the template **"Post to a channel when a webhook request is received"**.
+3. Complete the wizard — it generates a webhook URL.
+
+## Setup — classic Connector (legacy)
+
+1. In a Teams channel, click `⋯` → **Connectors**.
+2. Add **Incoming Webhook**.
+3. Name it, set an icon, copy the URL.
+
+```go
+import "github.com/gopackx/go-notification/channel/chat/teams"
+
+notifier.RegisterChannel("teams", teams.New(teams.Config{
+    WebhookURL: os.Getenv("TEAMS_WEBHOOK_URL"),
+}))
+```
+
+## Sending
+
+Teams messages use an **Adaptive Card** format. The builder produces one:
+
+```go
+func (n DeployStarted) ToTeams(u notification.Notifiable) *teams.Message {
+    return teams.NewMessage().
+        Title("Deploy started: " + n.Service).
+        Text("Environment: " + n.Env).
+        Fact("Commit", n.Commit).
+        Fact("Actor",  n.Actor).
+        Action("Open build", n.BuildURL)
+}
+```
+
+## Configuration reference
+
+| Field         | Type     | Required | Description                                                    |
+|---------------|----------|----------|----------------------------------------------------------------|
+| `WebhookURL`  | `string` | yes      | Teams workflow or connector URL.                                |
+| `Timeout`     | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
+
+## Caveats
+
+- **No DMs.** Webhooks post to channels only. For 1:1 user notifications, use a full Teams bot (not yet supported by this driver).
+- **Card rendering varies** between desktop, web, and mobile Teams clients. Test on each where it matters.
+- **Rate limiting** — Microsoft throttles aggressively above ~4 messages per second per connector. Batch updates.
+
+## Troubleshooting
+
+- **`Webhook message delivery failed with error: ...`** — usually invalid Adaptive Card JSON. Simplify the card to isolate which field breaks rendering.
+- **Messages arrive with wrong title/icon** — classic connector settings, not overrideable from the payload. Update in the Teams UI.
+- **Workflow posts but formatting is plain** — the Workflow template may be using "text" mode instead of Adaptive Card. Re-run the wizard and pick the card-capable template.

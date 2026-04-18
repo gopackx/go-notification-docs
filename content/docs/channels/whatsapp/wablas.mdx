@@ -1,0 +1,55 @@
+---
+title: Wablas
+description: Indonesian WhatsApp gateway alternative to Fonnte. Unofficial API.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Wablas** is another popular Indonesian WhatsApp gateway. Similar category to [Fonnte](/docs/channels/whatsapp/fonnte) — cheap, fast to set up, unofficial.
+
+<Callout type="warn" title="Unofficial API">
+Wablas uses the unofficial WhatsApp Web protocol. Against WhatsApp's Terms of Service — number ban is a real risk. Suitable for low-volume ops, internal notifications, MVPs. Not recommended for mission-critical customer comms.
+</Callout>
+
+## Pricing
+
+- **Trial** — free with limited quota.
+- **Paid** — from around **Rp 50,000 / month** (≈ $3 USD), scaling up with device count and message volume.
+- Check https://wablas.com/pricing for current tiers.
+
+## Setup
+
+1. Register at https://wablas.com.
+2. Add a device and scan the QR code with your WhatsApp phone.
+3. Copy the **device token** from the Wablas dashboard.
+
+```go
+import "github.com/gopackx/go-notification/channel/whatsapp/wablas"
+
+notifier.RegisterChannel("whatsapp", wablas.New(wablas.Config{
+    Token:   os.Getenv("WABLAS_TOKEN"),
+    BaseURL: "https://api.wablas.com",
+}))
+```
+
+## Configuration reference
+
+| Field     | Type     | Required | Description                                                         |
+|-----------|----------|----------|---------------------------------------------------------------------|
+| `Token`   | `string` | yes      | Device token from Wablas dashboard.                                 |
+| `BaseURL` | `string` | no       | Override API base URL (Wablas has regional/mirror endpoints).        |
+| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                              |
+
+## Fonnte vs Wablas
+
+Both are unofficial Indonesian WhatsApp gateways. Functionally equivalent from go-notification's perspective. Choose based on:
+
+- **Pricing tier** that matches your volume.
+- **Dashboard ergonomics** — try the free trial of both.
+- **Supported media types** — check each provider's docs for image/document/audio support on your tier.
+- **Team familiarity** — if your team already uses one, stick with it.
+
+## Operational tips
+
+- Same ban-risk mitigations as Fonnte: rate-limit yourself, honor opt-outs, don't blast cold contacts.
+- Register two providers (e.g. Fonnte as `whatsapp-a`, Wablas as `whatsapp-b`) and switch in code if one number gets flagged — keep a spare warm.

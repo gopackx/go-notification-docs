@@ -1,0 +1,70 @@
+---
+title: SMTP
+description: The SMTP driver — when to use it, what ports work, and the Gmail app-password walkthrough.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+<Callout type="warn" title="Cloud providers block SMTP ports">
+- **GCP** — Port 25 blocked permanently, cannot request unblock.
+- **AWS EC2** — Port 25 blocked by default, unblock requests often denied.
+- **DigitalOcean** — Port 25 blocked for all new accounts.
+- **Azure** — Port 25 blocked.
+
+Port 587 (STARTTLS) usually works, but some providers restrict it too.
+
+**If you're deploying on cloud, use [Mailgun](/docs/channels/email/mailgun), SendGrid, or SES instead of SMTP.**
+</Callout>
+
+## When to use SMTP
+
+- On-premise / bare-metal servers.
+- Corporate mail servers (Exchange, Postfix).
+- Self-hosted mail (Mailcow, iRedMail, Mail-in-a-Box).
+- Local development with Mailhog or Mailpit.
+- Non-restrictive hosts (Hetzner, OVH).
+
+## Setup
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/smtp"
+
+notifier.RegisterChannel("mail", smtp.New(smtp.Config{
+    Host:     "smtp.gmail.com",
+    Port:     587,
+    Username: "user@gmail.com",
+    Password: os.Getenv("SMTP_PASSWORD"),
+    From:     "noreply@example.com",
+    FromName: "My App",
+    TLS:      true,
+}))
+```
+
+## Gmail app password
+
+Gmail won't accept your regular password for SMTP. You need an **app password**:
+
+1. Enable **2-Step Verification** on your Google account.
+2. Go to https://myaccount.google.com/apppasswords.
+3. Create a new app password, label it e.g. "go-notification".
+4. Paste the 16-character password into `SMTP_PASSWORD`.
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                           |
+|-------------|----------|----------|-----------------------------------------------------------------------|
+| `Host`      | `string` | yes      | SMTP server hostname (e.g. `smtp.gmail.com`).                         |
+| `Port`      | `int`    | yes      | Usually `587` for STARTTLS, `465` for implicit TLS, `25` for plain.   |
+| `Username`  | `string` | yes      | SMTP auth username.                                                   |
+| `Password`  | `string` | yes      | SMTP auth password or app password.                                   |
+| `From`      | `string` | yes      | Default sender address.                                               |
+| `FromName`  | `string` | no       | Display name for the sender.                                          |
+| `TLS`       | `bool`   | no       | Use STARTTLS on port 587. Default: `true` when port is 587.           |
+| `Timeout`   | `time.Duration` | no | Connection + send timeout. Default: `30s`.                           |
+
+## Troubleshooting
+
+- **`connection refused`** — wrong host/port, or firewall / cloud provider blocking.
+- **`EOF` after HELO** — TLS required but `TLS: false`. Set `TLS: true`.
+- **`535 5.7.8`** — bad credentials. For Gmail, you need an app password, not your account password.
+- **Works locally, fails in prod** — your cloud provider is almost certainly blocking port 25/587. Switch to an API driver.

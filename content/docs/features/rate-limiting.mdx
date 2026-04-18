@@ -1,0 +1,92 @@
+---
+title: Rate Limiting
+description: Cap outgoing notification rate per channel so you don't tip over upstream limits.
+---
+
+Every external provider has rate limits. FCM caps multicasts, Slack caps webhooks, Twilio caps SMS per-second. Rate limiting on the go-notification side protects you from hitting those limits — and from being throttled or banned.
+
+## Global rate limit
+
+Apply a ceiling on total send rate across all channels:
+
+```go
+notification.New(notification.Config{
+    RateLimit:       100, // max ops per second
+    RateLimitBurst:  200, // token-bucket burst capacity
+})
+```
+
+This is a simple token bucket: when the bucket is empty, worker goroutines block until a token is available.
+
+## Per-channel rate limit
+
+More typical — each channel has its own ceiling:
+
+```go
+notifier.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
+    URL: os.Getenv("SLACK_WEBHOOK_URL"),
+    RateLimit: 1.0, // Slack webhooks: ~1/sec is safe
+}))
+
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "...",
+    APIKey: "...",
+    RateLimit: 10.0, // Mailgun starter tier
+}))
+```
+
+The driver-level limit applies only to that driver; the notifier-level limit applies across the whole pool.
+
+## Recommended starting points
+
+These are conservative defaults — your provider's actual limits may be higher.
+
+| Driver           | Safe ops/sec |
+|------------------|--------------|
+| Mailgun          | 10           |
+| SendGrid         | 50           |
+| AWS SES          | starts at 1 (request increase) |
+| Resend           | 10           |
+| Postmark         | 50           |
+| Slack webhook    | 1            |
+| Slack bot token  | 1 per channel|
+| Discord webhook  | 0.5 (30/min) |
+| Twilio SMS       | 1 per long-code; higher for short codes |
+| FCM              | 500 multicast/sec recommended |
+
+Always verify against the provider's documented quota before setting high values.
+
+## Burst vs sustained
+
+The token bucket allows short bursts above the sustained rate:
+
+```go
+RateLimit:      10,  // sustained: 10/sec
+RateLimitBurst: 50,  // but allows bursts up to 50 in quick succession
+```
+
+This is useful when notifications cluster (e.g. end-of-day digest fan-out).
+
+## What happens at the limit
+
+When the bucket is empty:
+
+- **Async mode** — workers block, queue fills up. If queue fills, `Send()` blocks upstream.
+- **Sync mode** — `Send()` blocks until tokens are available.
+
+Neither drops messages silently. If that's what you need, put a real queue in front and set the notifier's queue to small and non-blocking.
+
+## Per-tenant rate limiting
+
+Multi-tenant apps sometimes need per-customer caps to prevent one customer from exhausting shared quota. Not supported in-library — the usual pattern is to register one channel name per tenant with a dedicated driver instance:
+
+```go
+for _, tenant := range tenants {
+    notifier.RegisterChannel("mail-"+tenant.ID, mailgun.New(mailgun.Config{
+        // ... tenant-specific config
+        RateLimit: tenant.MailPerSec,
+    }))
+}
+```
+
+See also: [Retry & Backoff](/docs/features/retry) — the two features pair well; rate limiting prevents you from hitting 429s, retry handles the ones you didn't prevent.

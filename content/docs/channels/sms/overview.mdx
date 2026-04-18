@@ -1,0 +1,39 @@
+---
+title: SMS Overview
+description: Four SMS drivers — Twilio, Zenziva, Vonage (Nexmo), AWS SNS. When to use each.
+---
+
+SMS is expensive compared to WhatsApp/email. It makes sense for:
+
+- **OTP / 2FA** — still the most universal channel.
+- **Critical alerts** where you can't assume the user has your app installed.
+- **Reaching users who don't use WhatsApp or email**.
+
+Don't use SMS for marketing or long-form messages. Most carriers filter those, users opt out fast, and per-message cost kills ROI.
+
+## Driver Comparison
+
+| Driver   | Global | Indonesia | Free Tier         | Pricing (outbound)              |
+|----------|--------|-----------|-------------------|---------------------------------|
+| Twilio   | ✓      | ✓         | Trial credits     | $0.0075–$0.50/msg (country-dep) |
+| Vonage   | ✓      | ✓         | Trial credits     | Similar to Twilio               |
+| AWS SNS  | ✓      | ✓         | 100/month (free)  | From $0.00645/msg (US)          |
+| Zenziva  | —      | ✓ (best)  | Trial             | Rp 300–500/SMS                  |
+
+## Picking a driver
+
+- **Indonesia with tight cost control?** → [Zenziva](/docs/channels/sms/zenziva). Local pricing, no FX markup.
+- **Global OTP rollout?** → [Twilio](/docs/channels/sms/twilio). Best country coverage, mature verification APIs.
+- **AWS-native stack?** → [AWS SNS](/docs/channels/sms/sns). Cheapest if you're already on AWS IAM/CloudWatch.
+- **Enterprise + fallback needed?** → Register both Twilio and Vonage under different channel names and switch in code if one starts failing.
+
+## Shared gotchas
+
+- **Country coverage varies.** Every SMS provider has blind spots — test the specific country you're targeting before committing.
+- **Sender IDs are regulated.** US and many EU countries require pre-registered short codes / long codes. Zenziva-style custom sender names don't work in the US at all.
+- **Alphanumeric sender IDs** are read-only in many countries (users can't reply). Fine for OTPs, bad for support.
+- **Long messages** are billed as multiple segments (usually 160 chars ASCII, 70 chars Unicode per segment). Watch for accidental emoji pushing a 1-segment message to 3.
+
+## Format recipient numbers
+
+Always use **E.164 format** (`+628123456789`) from `RouteNotificationFor("sms")`. Local formats work on some providers and fail on others — E.164 is universally accepted.

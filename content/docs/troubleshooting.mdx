@@ -1,0 +1,87 @@
+---
+title: Troubleshooting
+description: Common problems and their fixes.
+---
+
+Symptom-first list of things that commonly break and what to check.
+
+## Nothing happens when I call `Send()`
+
+- **In async mode**, `Send()` returns immediately. Errors surface via `OnError`. Make sure you registered a handler.
+- **Program exits before sends complete** — add `notifier.Close(ctx)` before exit, especially in short-lived programs.
+- **Channel not registered** — if your `Via()` returns `"mail"` but you never called `RegisterChannel("mail", ...)`, you'll see an error in `OnError` saying "channel not registered".
+
+## `OnError` reports "channel not registered"
+
+Exact name mismatch. The string in `RegisterChannel(...)` must match the string returned by `Via()`. Case-sensitive.
+
+## Emails silently not delivered (but no errors)
+
+This is almost always SMTP port blocking — see [SMTP Port Blocking on Cloud](/docs/guides/smtp-cloud-issues). Switch to an API-based driver.
+
+Otherwise, check:
+- The `From` address is verified with your email provider.
+- SPF, DKIM, DMARC are set on your sending domain.
+- The recipient isn't on a suppression list at the provider.
+
+## WhatsApp sends succeed but messages don't arrive
+
+- **Unofficial APIs (WAHA / Fonnte / Wablas)**: session may have disconnected. Re-scan the QR or check the session health endpoint.
+- **Official APIs (Twilio / Meta Cloud)**: you may be outside the 24-hour conversation window. Use an approved template.
+- **Recipient has blocked your number** — nothing you can do; detect via delivery webhooks if the provider offers them.
+
+## `429 Too Many Requests` from a provider
+
+Your send rate exceeds the provider's limit. Lower `RateLimit` on the channel. If it's an intermittent spike (e.g., digest fan-out), increase `RateLimitBurst` to smooth it.
+
+## Database channel rows missing
+
+- **AutoMigrate not called** — the table may not exist. Check logs for migration errors.
+- **Wrong driver type** — e.g., using `DriverPostgres` config with a MySQL connection will generate invalid SQL.
+- **Transaction rollback** — if you `Send()` inside a transaction that then rolls back, the async dispatcher has already inserted (or will). Move `Send()` after commit.
+
+## Slack webhook returns 200 but no message appears
+
+- Webhook is for a different workspace than you think.
+- The channel was archived or renamed.
+- Payload is structurally valid but semantically empty (e.g., both `text` and `attachments` empty) — Slack silently drops these.
+
+## FCM returns `UNREGISTERED` or `INVALID_ARGUMENT`
+
+The device token is dead. Remove it from your database. Typical causes:
+- User uninstalled the app.
+- User disabled notifications in OS settings.
+- Token rotated (FCM refreshed it and the client didn't send the new one to your backend).
+
+## SMS delivered but user never got it
+
+Carrier-side drop. Happens most in:
+- **US** — carriers (T-Mobile, Verizon) aggressively filter alphanumeric senders. Register a 10DLC campaign.
+- **India** — DLT registration required for all SMS. Unregistered = silently dropped.
+- **UK** — alphanumeric senders get rewritten, sometimes into unreadable names.
+
+Use a proper short code or register a carrier-approved sender ID if SMS is mission-critical.
+
+## `Close(ctx)` returns context deadline exceeded
+
+Workers didn't finish in time. Either:
+- Increase the deadline.
+- Investigate which channel is slow (add per-channel duration logging via `OnSent`).
+- Reduce `QueueSize` to make backlogs smaller by pushing back on the caller earlier.
+
+## High memory usage
+
+- **Queue too large** — reduce `QueueSize`.
+- **Attachment payloads in memory** — mail attachments are currently held fully in memory until send. For large files, consider hosting elsewhere and sending a link.
+- **Too many worker goroutines** — `WorkerCount` defaults to `NumCPU`. Reduce if your sends are mostly I/O-bound and the CPUs are overkill (they usually are).
+
+## Build errors after upgrading
+
+- **Zod-related error** in Fumadocs builds — we pin Fumadocs to 15.5.5 and Zod to ^3 for this reason. Don't upgrade those packages without testing a build.
+- **`useEffectEvent` not exported** in Fumadocs v16 — requires React canary. Stick with Fumadocs 15.x for stable React.
+
+## Still stuck?
+
+- Check the **[FAQ](/docs/faq)** first.
+- Search open issues: https://github.com/gopackx/go-notification/issues.
+- File a new issue with: Go version, go-notification version, the driver, the error output (with secrets redacted), and a minimal reproduction.

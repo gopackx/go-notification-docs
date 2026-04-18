@@ -1,0 +1,11 @@
+{
+  "title": "Guides",
+  "pages": [
+    "choosing-email-driver",
+    "choosing-whatsapp-driver",
+    "smtp-cloud-issues",
+    "laravel-comparison",
+    "custom-channel",
+    "production-tips"
+  ]
+}

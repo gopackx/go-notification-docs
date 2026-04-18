@@ -1,0 +1,62 @@
+---
+title: Discord
+description: Post notifications to Discord channels via webhooks.
+---
+
+**Discord** webhooks are the fastest way to post into a Discord channel from external services. One URL per channel, no OAuth, no bot.
+
+## Setup
+
+1. In Discord, open the target channel's settings → **Integrations** → **Webhooks** → **New Webhook**.
+2. Name it, optionally set an avatar, pick a channel.
+3. Copy the **Webhook URL**.
+
+```go
+import "github.com/gopackx/go-notification/channel/chat/discord"
+
+notifier.RegisterChannel("discord", discord.New(discord.Config{
+    WebhookURL: os.Getenv("DISCORD_WEBHOOK_URL"),
+}))
+```
+
+## Sending
+
+```go
+func (n BuildFailed) Via(u notification.Notifiable) []string {
+    return []string{"discord"}
+}
+
+func (n BuildFailed) ToDiscord(u notification.Notifiable) *discord.Message {
+    return discord.NewMessage().
+        Content("Build failed on " + n.Branch).
+        Embed(
+            discord.NewEmbed().
+                Title(n.Service).
+                Description(n.Error).
+                Color(0xFF0000). // red
+                Field("Commit", n.Commit, true).
+                Field("Author", n.Author, true),
+        )
+}
+```
+
+## Configuration reference
+
+| Field         | Type     | Required | Description                                                    |
+|---------------|----------|----------|----------------------------------------------------------------|
+| `WebhookURL`  | `string` | yes      | Discord webhook URL (includes token — treat as a secret).       |
+| `Username`    | `string` | no       | Override bot name per message.                                  |
+| `AvatarURL`   | `string` | no       | Override bot avatar per message.                                |
+| `Timeout`     | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
+
+## Tips
+
+- **Rate limits** — Discord caps webhook traffic at 30 requests per minute per webhook. Above that, requests get `429 Too Many Requests`. Either throttle in-app, batch into fewer messages, or use multiple webhooks and round-robin.
+- **Embed limits** — 10 embeds per message, 6000 characters total across all embeds, 25 fields per embed. The builder won't stop you from exceeding these; Discord will reject.
+- **Secret in URL** — rotate the webhook (delete + recreate) if you leak the URL.
+
+## Troubleshooting
+
+- **`401 Unauthorized`** — webhook was deleted or regenerated.
+- **`400 Bad Request`** — usually a malformed embed (too many fields, too long, or invalid color). Error body includes which field.
+- **Messages appear with wrong username/avatar** — your `Username` override may be blocked by server rules (rare).

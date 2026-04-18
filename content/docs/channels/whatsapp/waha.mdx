@@ -1,0 +1,91 @@
+---
+title: WAHA (Self-Hosted)
+description: Self-host a WhatsApp HTTP API with Docker. Your data stays on your servers.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## What WAHA is
+
+**WAHA** is an open-source WhatsApp HTTP API you run yourself via Docker. Your messages, media, and session data stay on your own infrastructure. It wraps the WhatsApp Web protocol and exposes a clean HTTP interface.
+
+- Project: https://waha.devlike.pro
+- GitHub: https://github.com/devlikeapro/waha (6k+ stars).
+
+<Callout type="warn" title="Ban risk">
+WAHA uses the unofficial WhatsApp Web protocol. Using unofficial APIs is against WhatsApp's Terms of Service and carries a real risk of the number being banned. It's widely used, but not sanctioned by Meta. Use at your own discretion.
+</Callout>
+
+## Pricing
+
+- **WAHA Core** — free forever, single session.
+- **WAHA Plus** — around $15/month, supports multiple sessions, a dashboard, and proxy configuration.
+
+## Prerequisites
+
+- Docker installed on your server.
+- A WhatsApp account on your phone (you'll scan a QR code with it).
+
+## Step 1 — Run WAHA
+
+```bash
+docker run -it -p 3000:3000 devlikeapro/waha
+```
+
+For production, put it behind a reverse proxy (Caddy / Nginx) with TLS and an auth layer.
+
+## Step 2 — Connect WhatsApp
+
+1. Open `http://localhost:3000/dashboard` in your browser.
+2. Start a session.
+3. Scan the QR code with the WhatsApp app on your phone.
+
+The session persists across restarts as long as you mount a volume for WAHA's data directory.
+
+## Step 3 — Register the driver
+
+```go
+import "github.com/gopackx/go-notification/channel/whatsapp/waha"
+
+notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+    BaseURL:   "http://localhost:3000",
+    APIKey:    os.Getenv("WAHA_API_KEY"),
+    SessionID: "default",
+}))
+```
+
+## Sending
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"whatsapp"}
+}
+
+func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
+    return whatsapp.NewMessage().
+        Text("Hi, your order " + n.OrderID + " has shipped.")
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "whatsapp" {
+        return u.Phone // E.164 format, e.g. "628123456789"
+    }
+    return nil
+}
+```
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                      |
+|-------------|----------|----------|------------------------------------------------------------------|
+| `BaseURL`   | `string` | yes      | Where your WAHA instance is running (`http://host:3000`).         |
+| `APIKey`    | `string` | yes      | API key configured in your WAHA install. Required for Plus.      |
+| `SessionID` | `string` | yes      | Session name. `"default"` unless you run multiple sessions.      |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Operational tips
+
+- **Persist the session volume.** If you don't, you re-scan the QR code every restart.
+- **Run only on a trusted network.** WAHA's admin dashboard doesn't have fine-grained auth on the free tier.
+- **Watch for disconnects.** The WhatsApp Web protocol expects your phone to be online — periodic reconnects are normal.
+- **Back off on errors.** If WAHA starts returning 429s, you're being rate-limited on the WhatsApp side. Slow down.

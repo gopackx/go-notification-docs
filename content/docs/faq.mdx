@@ -1,0 +1,93 @@
+---
+title: FAQ
+description: The questions you were about to ask.
+---
+
+## Does go-notification require an ORM?
+
+No. The library uses `database/sql` directly. No GORM, no Bun, no Ent. You can use an ORM in the rest of your app — the database channel won't interfere because it owns its own table and SQL.
+
+## Can I use multiple email drivers at the same time?
+
+Yes. Register them with different names and reference the one you want in `Via()`:
+
+```go
+notifier.RegisterChannel("mail-transactional", sendgrid.New(...))
+notifier.RegisterChannel("mail-marketing",     mailgun.New(...))
+
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"mail-transactional"}
+}
+```
+
+Same pattern works for any channel family — two WhatsApp providers with different ban tolerance, two Slack workspaces, two database shards, etc.
+
+## Is WAHA safe to use?
+
+WAHA uses an unofficial WhatsApp protocol and carries a real risk of number ban. It's widely used (6k+ GitHub stars) but not sanctioned by Meta. For production where account loss would be catastrophic, use **Twilio WhatsApp** or **Meta Cloud API** instead.
+
+We cover the tradeoff in detail on the [WhatsApp Overview](/docs/channels/whatsapp/overview) page.
+
+## Does SMTP work on GCP / AWS / DigitalOcean?
+
+Port 25 is blocked on most cloud providers. Port 587 usually works but not always. **We recommend API-based email drivers (Mailgun, SendGrid, SES, Resend, Postmark) for any cloud deployment.** Full details: [SMTP Port Blocking on Cloud](/docs/guides/smtp-cloud-issues).
+
+## Can I add my own custom channel?
+
+Yes. Implement the `Channel` interface and register it like any built-in driver:
+
+```go
+type MyChannel struct{}
+
+func (c *MyChannel) Send(ctx context.Context, n notification.Notification, u notification.Notifiable) error {
+    // your send logic
+    return nil
+}
+
+notifier.RegisterChannel("mine", &MyChannel{})
+```
+
+A full walkthrough will land in the **Custom Channel** guide — coming after Phase 1.
+
+## Does it support notification preferences (user opt-out)?
+
+Not as a first-class feature. For now, handle opt-outs inside `Via()`:
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    channels := []string{"database"} // always in-app
+    user := u.(User)
+    if user.WantsEmail    { channels = append(channels, "mail") }
+    if user.WantsWhatsApp { channels = append(channels, "whatsapp") }
+    return channels
+}
+```
+
+First-class preferences (per-type, per-channel opt-out, digest batching) are planned for post-1.0.
+
+## How does retry work?
+
+Failed sends are retried with exponential backoff:
+
+- 1st retry after **1s**
+- 2nd retry after **2s**
+- 3rd retry after **4s**
+
+Configurable via `MaxRetries` and `RetryDelay` in `notification.Config`. If all retries fail, the registered `OnError` callback fires with the final error.
+
+## What happens if one channel fails but others succeed?
+
+Each channel is independent. If `whatsapp` fails but `mail` succeeds, only WhatsApp is retried. `OnError` is called per-channel-failure, not per-notification.
+
+## Does `Send()` block?
+
+No — it returns immediately. Dispatch happens on the worker pool. If you need synchronous behavior (for example, in a CLI tool), set `Config.Async = false`.
+
+## How do I test notifications without sending real messages?
+
+- For **email**: register [Mailtrap](/docs/channels/email/mailtrap) as your `mail` channel. Messages go to a sandbox inbox.
+- For **everything else**: implement a test channel that captures calls, register it under the same name as production, and assert on it.
+
+## Where is the changelog?
+
+**[Here](/docs/changelog)**. Every release documents breaking changes, new drivers, and bug fixes.

@@ -1,0 +1,79 @@
+---
+title: On-Demand Channel Override
+description: Send to a specific address without a registered Notifiable — for anonymous, admin, or one-off notifications.
+---
+
+Sometimes you need to send to a raw address without having a `Notifiable`:
+
+- An admin alert to a Slack channel or email address not tied to a user.
+- A signup confirmation to an email that doesn't yet have a user record.
+- An ad-hoc "send this to myself" from a CLI tool.
+
+For that, use `OnDemand`:
+
+```go
+notifier.SendOnDemand(ctx,
+    notification.OnDemand{
+        "mail":     "admin@example.com",
+        "slack":    "#ops-alerts",
+        "whatsapp": "+628123456789",
+    },
+    IncidentStarted{Severity: "sev-1", Service: "checkout"},
+)
+```
+
+## How it works
+
+`OnDemand` is a `map[string]any` — keys are channel names, values are whatever `RouteNotificationFor(channel)` would normally return. Internally, go-notification wraps it in an anonymous `Notifiable` and dispatches exactly like `Send()`.
+
+## Picking channels
+
+The notification's `Via()` is still called and still decides which channels to use. `OnDemand` only provides routing for those channels. If the notification returns `[]string{"mail", "database"}` but your `OnDemand` map only has `"mail"`, the `database` dispatch is skipped (no target).
+
+## Per-channel override with existing user
+
+You can also override routing for a single channel while using a regular user:
+
+```go
+notifier.SendTo(ctx, user, OnDemand{
+    "mail": "custom@example.com", // overrides user.Email for this one send
+}, OrderShipped{})
+```
+
+This is less common — most teams find it clearer to model the override explicitly in the user type (e.g. `user.NotificationEmail` vs `user.LoginEmail`).
+
+## Routes that take complex types
+
+`RouteNotificationFor` can return any type — `[]string` (FCM token list), numeric IDs (Telegram chat IDs), structs. Same in `OnDemand`:
+
+```go
+notifier.SendOnDemand(ctx,
+    OnDemand{
+        "push": []string{token1, token2},
+        "telegram": int64(123456789),
+    },
+    Alert{},
+)
+```
+
+## Use cases that are a bad fit
+
+- **High-volume fan-out** to dynamic addresses — `SendOnDemand` works, but creating a real `Notifiable` will be cleaner and more maintainable.
+- **Anything you'll call from three or more places** — define a proper type once.
+
+## Tests
+
+`OnDemand` is the nicest way to test notifications in isolation — you can assert what `Via()` and the `To*()` methods produce without wiring a fake user:
+
+```go
+func TestOrderShippedRendering(t *testing.T) {
+    notifier, captured := newTestNotifier() // test channel that records calls
+
+    notifier.SendOnDemand(ctx,
+        OnDemand{"mail": "test@example.com"},
+        OrderShipped{OrderID: "A-1"},
+    )
+
+    require.Equal(t, "Your order shipped", captured.Subject)
+}
+```

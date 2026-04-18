@@ -1,0 +1,102 @@
+---
+title: Security & Redaction
+description: API keys stay out of logs. Drivers use raw HTTP with no third-party SDKs.
+---
+
+go-notification is built around two security defaults:
+
+1. **Auto-redaction** of secrets in logs and error messages.
+2. **Zero third-party SDKs** — every driver uses `net/http` directly.
+
+## Auto-redaction
+
+API keys, tokens, and secrets are redacted from:
+
+- Error messages returned to `OnError`.
+- Log output from drivers.
+- `String()` methods on config types.
+
+For example, attempting to log a Mailgun config:
+
+```go
+cfg := mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: "key-abcdef1234567890",
+}
+fmt.Println(cfg.String())
+// Domain=mg.example.com APIKey=key-*****7890
+```
+
+Fields marked as secrets internally (API keys, tokens, passwords) never appear in full, even via `%+v` formatting or JSON marshaling.
+
+## What's redacted by default
+
+- Mailgun `APIKey`
+- SendGrid `APIKey`
+- AWS `SecretAccessKey`
+- Postmark `ServerToken`
+- Resend `APIKey`
+- Mailtrap `APIKey`
+- SMTP `Password`
+- Twilio `AuthToken`
+- WAHA `APIKey`
+- Fonnte `Token`, Wablas `Token`
+- FCM service account JSON (the whole thing)
+- Slack bot tokens, incoming webhook URLs (the token portion)
+- Telegram bot tokens
+- Discord webhook URLs (the token portion)
+- Teams webhook URLs
+- Webhook `Secret`
+
+## Redacting your own fields
+
+If you define your own `Config` struct or custom channel, use the `redact` struct tag:
+
+```go
+type MyConfig struct {
+    Endpoint string
+    APIKey   string `redact:"true"`
+}
+```
+
+The library's redacting logger (and any code that invokes `notification.Redact(cfg)`) will respect the tag.
+
+## Zero SDK dependencies
+
+Every driver uses `net/http`. No Twilio Go SDK, no AWS SDK, no SendGrid client library.
+
+**Why it matters:**
+
+- **Tiny binary.** Adding WhatsApp support doesn't pull in the Twilio SDK's ~10MB dependency tree.
+- **Audit surface.** You audit this library's raw HTTP calls. You don't transitively audit six SDK versions with their own CVE history.
+- **Upgradeability.** If an upstream API changes, fixing the driver is editing one file — no waiting for the SDK maintainer.
+
+**Trade-off:** when upstream APIs add brand-new features (e.g., FCM's new batching API), this library has to catch up manually. That's explicit project scope.
+
+## Secrets in environment variables
+
+A common pitfall: shell scripts that print env vars. Don't `echo $FCM_SERVICE_ACCOUNT_JSON`. Don't include API keys in git-committed `.env.example` files.
+
+Recommended:
+
+- Use a secrets manager in production (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault).
+- Load secrets at application boot, pass them as `[]byte` where possible, and avoid roundtripping through the environment after boot.
+
+## TLS
+
+Every driver enforces HTTPS with the system's default CA bundle. Override via `http.Client` if you need a custom CA or mutual TLS:
+
+```go
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    // ...
+    HTTPClient: &http.Client{
+        Transport: &http.Transport{
+            TLSClientConfig: &tls.Config{RootCAs: customPool},
+        },
+    },
+}))
+```
+
+## Reporting a vulnerability
+
+Email the maintainer directly (not a public issue) per the **SECURITY.md** in the repo. Don't disclose publicly until a fix ships.

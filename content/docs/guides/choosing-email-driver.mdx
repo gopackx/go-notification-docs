@@ -1,0 +1,68 @@
+---
+title: Choosing an Email Driver
+description: Flowchart and comparison for picking between SMTP, Mailgun, SendGrid, SES, Resend, Postmark, and Mailtrap.
+---
+
+Seven drivers. Most teams pick wrong on the first try, then switch 6 months in. Here's how to skip that.
+
+## Decision flowchart
+
+1. **Deploying on GCP / AWS / DigitalOcean / Azure?** → Use an API-based driver. SMTP ports are blocked. See [SMTP Port Blocking](/docs/guides/smtp-cloud-issues).
+2. **Need best-in-class inbox delivery?** → [Postmark](/docs/channels/email/postmark).
+3. **Cheapest at scale (10k+ emails/month)?** → [AWS SES](/docs/channels/email/ses). $0.10 per 1,000.
+4. **Enterprise, compliance, HIPAA/GDPR support?** → [SendGrid](/docs/channels/email/sendgrid).
+5. **Modern DX, React Email, Next.js stack?** → [Resend](/docs/channels/email/resend).
+6. **Just getting started, generous free tier?** → [Mailgun](/docs/channels/email/mailgun) (100/day) or Resend (3k/month).
+7. **Need a sandbox for tests?** → [Mailtrap](/docs/channels/email/mailtrap) in sandbox mode.
+8. **On-premise / bare metal with no port blocking?** → [SMTP](/docs/channels/email/smtp) is fine.
+
+## Full comparison
+
+| Driver    | Free Tier       | Paid (starting)  | Deliverability | Best For                          |
+|-----------|-----------------|------------------|----------------|-----------------------------------|
+| SMTP      | Self-hosted     | —                | Depends on MTA | On-premise, corporate mail servers |
+| Mailgun   | 100/day (3 mo)  | $0.80/1k emails  | Good           | Startups, early-stage              |
+| SendGrid  | 100/day         | From $19.95/mo   | Good           | Enterprise, compliance             |
+| AWS SES   | 3k/mo (yr 1)    | $0.10/1k emails  | Good           | High volume on AWS stack           |
+| Resend    | 3k/mo           | From $20/mo      | Good           | Modern DX, Next.js/React Email     |
+| Postmark  | 100/mo          | From $15/mo      | **Best**       | Transactional where delivery matters |
+| Mailtrap  | 1k/mo           | From $15/mo      | Good (prod tier) | Dev sandbox + production in one   |
+
+## Pricing at scale
+
+Rough cost at three volume tiers for **transactional-only** mail. Pricing changes, verify before committing.
+
+| Volume/month | Mailgun | SendGrid | AWS SES | Resend | Postmark |
+|--------------|---------|----------|---------|--------|----------|
+| 10,000       | $8      | $19.95   | $1.00   | $20    | $15      |
+| 100,000      | $80     | ~$90     | $10     | $35    | $125     |
+| 1,000,000    | $800    | ~$600    | $100    | $440   | ~$900    |
+
+SES wins on cost. Postmark wins on deliverability. SendGrid wins on enterprise features. Mailgun is a reasonable middle ground until you commit to one end.
+
+## Common mistake: choosing on cost alone
+
+Optimizing for cost when you have 1k emails/month is a trap — the difference is a few dollars. Deliverability problems cost far more:
+
+- 5% of transactional emails going to spam on Mailgun that would inbox on Postmark = dozens of password-reset support tickets per month.
+- Wrong driver choice delaying your sign-up flow until you fix it = worse than paying $15/month.
+
+Pick the driver whose failure modes you can live with. Reconsider at 10k+ emails/month when cost starts to matter.
+
+## Switching drivers
+
+The whole point of go-notification — swap the registration, keep the notification code:
+
+```go
+// Before
+notifier.RegisterChannel("mail", mailgun.New(/* ... */))
+
+// After — one line change
+notifier.RegisterChannel("mail", postmark.New(/* ... */))
+```
+
+Your `ToMail()` methods don't change.
+
+## Dual-provider pattern
+
+Production-grade setups sometimes keep two providers registered, with the primary as `mail` and fallback as `mail-fallback`. In the `OnError` callback you can re-trigger the failed notification via the fallback. Non-trivial — don't do it unless you've seen primary-provider outages firsthand.

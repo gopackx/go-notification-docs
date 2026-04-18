@@ -1,0 +1,195 @@
+---
+title: In-App Notification Center
+description: Build a bell-icon notification center backed by the database channel. Unread counts, mark-as-read, query API.
+---
+
+A complete in-app notification feature — stored in Postgres, queried via the database channel's API, exposed over HTTP, displayed in a front-end bell dropdown.
+
+## Step 1 — Auto-migrate the notifications table
+
+```go
+import "github.com/gopackx/go-notification/channel/database"
+
+dbChannel := database.New(database.Config{
+    DB:     db,
+    Driver: database.DriverPostgres,
+})
+
+if err := dbChannel.AutoMigrate(ctx); err != nil {
+    panic(err)
+}
+notifier.RegisterChannel("database", dbChannel)
+```
+
+This creates a `notifications` table with columns: `id`, `type`, `notifiable_type`, `notifiable_id`, `data` (JSON), `read_at`, `created_at`.
+
+## Step 2 — Define in-app notification
+
+```go
+type CommentReceived struct {
+    CommentID int64
+    AuthorName string
+    Excerpt string
+}
+
+func (n CommentReceived) Via(_ notification.Notifiable) []string {
+    return []string{"database"}
+}
+
+func (n CommentReceived) ToDatabase(_ notification.Notifiable) map[string]any {
+    return map[string]any{
+        "type":        "comment.received",
+        "comment_id":  n.CommentID,
+        "author_name": n.AuthorName,
+        "excerpt":     n.Excerpt,
+    }
+}
+```
+
+## Step 3 — HTTP endpoints
+
+```go
+func handleList(dbChannel *database.Channel) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        userID := userIDFromContext(r.Context())
+
+        items, err := dbChannel.Query(r.Context(), database.Filter{
+            NotifiableType: "user",
+            NotifiableID:   userID,
+            Limit:          50,
+        })
+        if err != nil { http.Error(w, err.Error(), 500); return }
+
+        json.NewEncoder(w).Encode(items)
+    }
+}
+
+func handleUnreadCount(dbChannel *database.Channel) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        userID := userIDFromContext(r.Context())
+
+        n, _ := dbChannel.UnreadCount(r.Context(), "user", userID)
+        json.NewEncoder(w).Encode(map[string]int{"count": n})
+    }
+}
+
+func handleMarkRead(dbChannel *database.Channel) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+        if err := dbChannel.MarkAsRead(r.Context(), id); err != nil {
+            http.Error(w, err.Error(), 500); return
+        }
+        w.WriteHeader(204)
+    }
+}
+
+func handleMarkAllRead(dbChannel *database.Channel) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        userID := userIDFromContext(r.Context())
+        if err := dbChannel.MarkAllAsRead(r.Context(), "user", userID); err != nil {
+            http.Error(w, err.Error(), 500); return
+        }
+        w.WriteHeader(204)
+    }
+}
+```
+
+Wire these up:
+
+```go
+mux := http.NewServeMux()
+mux.HandleFunc("GET /api/notifications",              handleList(dbChannel))
+mux.HandleFunc("GET /api/notifications/unread-count", handleUnreadCount(dbChannel))
+mux.HandleFunc("POST /api/notifications/{id}/read",   handleMarkRead(dbChannel))
+mux.HandleFunc("POST /api/notifications/read-all",    handleMarkAllRead(dbChannel))
+```
+
+## Step 4 — Triggering a notification
+
+Anywhere in your app:
+
+```go
+notifier.Send(ctx, user, CommentReceived{
+    CommentID:  cmt.ID,
+    AuthorName: cmt.Author.Name,
+    Excerpt:    cmt.Body[:min(80, len(cmt.Body))],
+})
+```
+
+The database channel inserts a row. The HTTP endpoints immediately see it on the next poll.
+
+## Step 5 — Front-end (sketch)
+
+A minimal bell-dropdown component:
+
+```jsx
+function BellIcon() {
+  const [count, setCount] = useState(0);
+  const [items, setItems] = useState([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const tick = async () => {
+      const { count } = await fetch('/api/notifications/unread-count').then(r => r.json());
+      setCount(count);
+    };
+    tick();
+    const h = setInterval(tick, 30_000); // poll every 30s
+    return () => clearInterval(h);
+  }, []);
+
+  const openDropdown = async () => {
+    const list = await fetch('/api/notifications').then(r => r.json());
+    setItems(list);
+    setOpen(true);
+  };
+
+  return (
+    <div>
+      <button onClick={openDropdown}>🔔 {count > 0 && <span>{count}</span>}</button>
+      {open && (
+        <ul>
+          {items.map(n => (
+            <li key={n.id} style={{opacity: n.read_at ? 0.5 : 1}}>
+              <strong>{n.type}</strong> {n.data.author_name}: {n.data.excerpt}
+              {!n.read_at && (
+                <button onClick={() => fetch(`/api/notifications/${n.id}/read`, {method:'POST'})}>
+                  Mark read
+                </button>
+              )}
+            </li>
+          ))}
+          <li><button onClick={() => fetch('/api/notifications/read-all', {method:'POST'})}>Mark all read</button></li>
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+## Real-time updates (optional)
+
+Polling every 30s is usually fine. For instant updates, pair the database channel with:
+
+- **Server-Sent Events** — push new notifications to a long-lived SSE connection.
+- **WebSockets** — same but with bidirectional support.
+- **Polling on user interaction** — fetch when the user focuses the tab.
+
+None of these require changes to this library — the database channel writes the row, and your real-time layer publishes from wherever you detect the insert (for example, a Postgres `LISTEN/NOTIFY` trigger).
+
+## Pairing with email
+
+A common pattern — always write to the database, optionally also send email based on user preferences:
+
+```go
+func (n CommentReceived) Via(notifiable notification.Notifiable) []string {
+    u := notifiable.(User)
+    channels := []string{"database"}
+    if u.EmailNotificationsEnabled {
+        channels = append(channels, "mail")
+    }
+    return channels
+}
+```
+
+One send call, two channels. The database row is always there so the user sees it in the bell icon; email is opt-in.

@@ -1,0 +1,57 @@
+---
+title: SendGrid
+description: Send transactional email via the SendGrid v3 API.
+---
+
+SendGrid (Twilio SendGrid) is a mature, enterprise-grade email platform with strong compliance story (SOC 2, GDPR, HIPAA BAA available on higher tiers).
+
+## Pricing
+
+- **Free** — 100 emails/day, forever.
+- **Essentials** — from $19.95/month for 50k emails.
+- **Pro** — from $89.95/month with dedicated IP, sub-user management.
+
+Verify current pricing at https://sendgrid.com/pricing — tiers and limits change.
+
+## Setup
+
+1. Create an account at https://sendgrid.com.
+2. Complete **sender authentication** — either a single sender verification or full domain auth (SPF/DKIM/DMARC).
+3. Create an **API key** with at least `Mail Send` permission.
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/sendgrid"
+
+notifier.RegisterChannel("mail", sendgrid.New(sendgrid.Config{
+    APIKey: os.Getenv("SENDGRID_API_KEY"),
+    From:   "noreply@example.com",
+    FromName: "My App",
+}))
+```
+
+## Configuration reference
+
+| Field       | Type     | Required | Description                                                     |
+|-------------|----------|----------|-----------------------------------------------------------------|
+| `APIKey`    | `string` | yes      | SendGrid API key. Starts with `SG.`.                            |
+| `From`      | `string` | yes      | Verified sender address.                                        |
+| `FromName`  | `string` | no       | Display name.                                                   |
+| `ReplyTo`   | `string` | no       | Optional Reply-To header.                                       |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Sending
+
+```go
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order shipped").
+        Line("Tracking inside.").
+        Action("Track", "https://example.com/track")
+}
+```
+
+## Troubleshooting
+
+- **`401 Unauthorized`** — bad API key, or the key is missing `Mail Send` scope.
+- **`403 Forbidden: The from address does not match a verified Sender`** — complete sender authentication in the SendGrid dashboard.
+- **Emails in spam even on authenticated domain** — check SendGrid's **Stats → Engagement** panel; high bounce or spam-complaint rates will downrank your IP reputation.

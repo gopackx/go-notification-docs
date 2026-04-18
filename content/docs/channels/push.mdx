@@ -1,0 +1,96 @@
+---
+title: Push (Firebase FCM)
+description: Mobile push notifications via Firebase Cloud Messaging. iOS, Android, and Web.
+---
+
+Mobile push is handled by **Firebase Cloud Messaging (FCM)**. One driver, all three platforms (iOS via APNs under the hood, Android directly, and Web via browser push).
+
+## Pricing
+
+**Free.** FCM has no per-message cost for any volume. You pay for whatever storage/analytics features you enable on Firebase, but message delivery itself is unlimited and free.
+
+## Setup
+
+1. Create a Firebase project at https://console.firebase.google.com.
+2. Add your apps (iOS, Android, Web).
+3. For **iOS**, upload your APNs authentication key (P8) in Project Settings → Cloud Messaging.
+4. For **Android**, FCM works out of the box once `google-services.json` is in the app.
+5. Generate a **service account JSON** (Project Settings → Service accounts → Generate new private key).
+
+```go
+import "github.com/gopackx/go-notification/channel/push/fcm"
+
+notifier.RegisterChannel("push", fcm.New(fcm.Config{
+    CredentialsJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
+}))
+```
+
+Storing the full JSON in an env var is fine for smaller setups; for anything serious, fetch it from a secrets manager at startup.
+
+## Sending
+
+```go
+func (n ChatMessage) Via(u notification.Notifiable) []string {
+    return []string{"push"}
+}
+
+func (n ChatMessage) ToPush(u notification.Notifiable) *push.Message {
+    return push.NewMessage().
+        Title(n.From).
+        Body(n.Preview).
+        Data("conversation_id", n.ConversationID).
+        Badge(1).
+        Sound("default")
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "push" {
+        return u.DeviceTokens // []string — all registered FCM tokens for this user
+    }
+    return nil
+}
+```
+
+If `RouteNotificationFor` returns a slice, the driver fans out to all tokens in one call (FCM multicast).
+
+## Configuration reference
+
+| Field             | Type     | Required | Description                                                      |
+|-------------------|----------|----------|------------------------------------------------------------------|
+| `CredentialsJSON` | `[]byte` | yes      | Contents of a Firebase service account JSON file.                 |
+| `ProjectID`       | `string` | no       | Override project ID (inferred from JSON by default).              |
+| `Timeout`         | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+
+## Platform-specific fields
+
+The message builder exposes platform overrides:
+
+```go
+push.NewMessage().
+    Title("Alert").
+    Body("Your order shipped").
+    Android(push.AndroidConfig{
+        Priority: "high",
+        Channel:  "orders",
+    }).
+    IOS(push.IOSConfig{
+        Sound: "ping.caf",
+        Badge: 1,
+    }).
+    Web(push.WebConfig{
+        Icon: "https://example.com/icon.png",
+    })
+```
+
+## Token lifecycle
+
+- **Register** tokens at app startup / after login and store them per user.
+- **Remove** a token when FCM returns `UNREGISTERED` or `INVALID_ARGUMENT` on send — the device uninstalled the app or the token rotated. The driver surfaces these in `OnError`.
+- **Refresh** — FCM may rotate tokens; the client SDK emits a `onTokenRefresh` event. Send the new token to your backend and replace the old one.
+
+## Troubleshooting
+
+- **`UNREGISTERED`** — user uninstalled the app or logged out. Remove the token from your database.
+- **`QUOTA_EXCEEDED`** — rare; usually from sending to too many tokens in one multicast. Split into smaller batches.
+- **Silent pushes not delivered on iOS** — Apple heavily throttles silent/content-available pushes. Don't rely on them for anything critical.
+- **Notifications work in dev, fail in TestFlight/prod** — wrong APNs environment (sandbox vs production) in the service account config, or APNs P8 key uploaded to wrong project.

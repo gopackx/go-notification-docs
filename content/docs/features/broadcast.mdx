@@ -1,0 +1,70 @@
+---
+title: Broadcast (SendMulti)
+description: Fan a single notification out to many recipients efficiently.
+---
+
+Sometimes you need to send the same notification to many users — a weekly digest, an incident announcement, a new-feature rollout. That's `SendMulti`.
+
+## Basic usage
+
+```go
+users := []notification.Notifiable{u1, u2, u3, ...}
+
+notifier.SendMulti(ctx, users, WeeklyDigest{Week: "2026-W16"})
+```
+
+Behavior:
+
+- Each recipient's `Via()` is resolved independently (they can differ — one user wants `mail + database`, another wants only `database`).
+- Sends are enqueued on the worker pool (or executed synchronously in sync mode).
+- Retry, rate limiting, and error handling apply per-send just like `Send()`.
+
+## Chunking large sends
+
+For tens-of-thousands of recipients, don't build a single giant slice — that uses a lot of memory and pressures the queue. Process in chunks:
+
+```go
+const chunkSize = 500
+
+for i := 0; i < len(allUsers); i += chunkSize {
+    end := i + chunkSize
+    if end > len(allUsers) { end = len(allUsers) }
+
+    notifier.SendMulti(ctx, allUsers[i:end], WeeklyDigest{})
+}
+```
+
+## Provider-specific batching
+
+Some providers have batch APIs:
+
+- **Mailgun** — `batch_size=1000` recipients per API call, same content.
+- **SendGrid** — personalizations array up to 1000 per request.
+- **FCM** — multicast up to 500 tokens per request.
+
+The drivers use these automatically when `SendMulti` detects same-content sends across the same channel. If you use per-recipient content (personalized subject lines, etc.), they fall back to single-recipient calls.
+
+## When not to use SendMulti
+
+- **Rate-limited channels** (SMS, WhatsApp) — you'll hit provider caps fast. Use a slower pipeline, not `SendMulti`.
+- **Highly personalized content** — if every recipient gets meaningfully different data, the batch optimization disappears and you're just using `Send` in a loop with extra abstraction.
+
+## Per-recipient error handling
+
+Errors from individual recipients fire the usual `OnError` callback, including which notifiable failed:
+
+```go
+OnError: func(ctx context.Context, err notification.Error) {
+    log.Error("send failed",
+        "notifiable", fmt.Sprintf("%T/%v", err.Notifiable, err.Notifiable),
+        "channel",    err.Channel,
+        "err",        err.Err,
+    )
+}
+```
+
+One recipient failing does not abort the rest.
+
+## Ordering
+
+`SendMulti` does not guarantee ordering. If you need ordered delivery (rare for notifications), send one-by-one synchronously. For everything else, assume sends complete in worker-pool order.

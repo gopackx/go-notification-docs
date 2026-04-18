@@ -1,0 +1,54 @@
+---
+title: Zenziva
+description: Indonesian SMS gateway. Local pricing, custom alphanumeric sender, broad local carrier coverage.
+---
+
+**Zenziva** is an Indonesia-focused SMS provider. If your users are all in Indonesia, Zenziva is usually 2–5× cheaper than Twilio per message.
+
+## Pricing
+
+- **Trial** — free with limited quota.
+- **Regular SMS** — around Rp 300/SMS.
+- **Masking SMS** (custom sender name) — around Rp 500/SMS.
+- Volume discounts apply. https://zenziva.id for current rates.
+
+## Setup
+
+1. Register at https://zenziva.id.
+2. Top up credit (Indonesian pricing, IDR).
+3. From the dashboard, copy the **userkey** and **passkey** (or API token depending on account type).
+
+```go
+import "github.com/gopackx/go-notification/channel/sms/zenziva"
+
+notifier.RegisterChannel("sms", zenziva.New(zenziva.Config{
+    UserKey: os.Getenv("ZENZIVA_USERKEY"),
+    PassKey: os.Getenv("ZENZIVA_PASSKEY"),
+}))
+```
+
+## Configuration reference
+
+| Field     | Type     | Required | Description                                                          |
+|-----------|----------|----------|----------------------------------------------------------------------|
+| `UserKey` | `string` | yes      | Account userkey.                                                      |
+| `PassKey` | `string` | yes      | Account passkey / API token.                                          |
+| `Mode`    | `string` | no       | `"regular"` (default) or `"masking"` for custom sender name.           |
+| `Masking` | `string` | no       | Custom sender name when `Mode == "masking"` (e.g. `"YourBrand"`).     |
+| `BaseURL` | `string` | no       | Override API base. Zenziva has multiple endpoints.                    |
+| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                               |
+
+## Number format
+
+Zenziva accepts local (`08123456789`) or international (`628123456789` without `+`) formats. Normalize to one format in your code — mixing causes confusion in delivery logs.
+
+## Regular vs Masking
+
+- **Regular** — cheapest. Recipient sees a random short code as the sender.
+- **Masking** — your brand name as the sender (e.g. `BCA`, `Tokopedia`). Better UX but more expensive and requires sender-name registration with Zenziva.
+
+## Troubleshooting
+
+- **`status: 2` (fail)** — bad credentials or insufficient balance.
+- **Message delivered status stuck at `pending`** — carrier-side delay. Indonesian operators have intermittent slowness; don't retry too aggressively.
+- **Masking sender rejected by carrier** — Telkomsel/XL/Indosat each have their own sender-registration process, handled on Zenziva's side. If a sender works for some users and fails for others, it's probably not registered with the failing user's carrier.

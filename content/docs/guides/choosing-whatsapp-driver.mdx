@@ -1,0 +1,99 @@
+---
+title: Choosing a WhatsApp Driver
+description: Official vs unofficial, ban risk, cost at scale, Indonesia-specific options.
+---
+
+Five drivers. Two official (Twilio, Meta Cloud), three unofficial (WAHA, Fonnte, Wablas). The stakes on this choice are higher than any other channel — the wrong pick can get your WhatsApp number banned, which is much harder to recover from than an email provider swap.
+
+## Decision flowchart
+
+1. **Customer-critical comms, account loss would be catastrophic?** → [Meta Cloud API](/docs/channels/whatsapp/meta-cloud-api) or [Twilio WhatsApp](/docs/channels/whatsapp/twilio).
+2. **Need data on your own infra (compliance / self-hosted stack)?** → [WAHA](/docs/channels/whatsapp/waha).
+3. **Indonesia market, tight budget, low volume?** → [Fonnte](/docs/channels/whatsapp/fonnte) or [Wablas](/docs/channels/whatsapp/wablas).
+4. **Global enterprise already using Twilio for SMS?** → Twilio WhatsApp (single vendor, single bill).
+5. **Prototype or internal tool only?** → WAHA Core (free).
+
+## Official vs unofficial
+
+This is the fundamental split.
+
+| Factor                  | Official (Twilio, Meta Cloud)     | Unofficial (WAHA, Fonnte, Wablas) |
+|-------------------------|-----------------------------------|-----------------------------------|
+| **Ban risk**            | None                              | Real — violates WhatsApp ToS      |
+| **Setup time**          | Days to weeks (business verification) | Minutes (scan QR code)        |
+| **Templates / buttons** | Yes, full support                 | Limited to text + media            |
+| **Cost model**          | Per conversation (24h window)     | Flat monthly rate or per-message   |
+| **Support**             | Meta + BSP support channels       | Vendor-specific forums / Discord   |
+| **Volume cap**          | Practically unlimited             | Soft-capped by WhatsApp's flagging |
+| **Typical users**       | Production customer comms         | MVPs, internal tools, low-volume ops |
+
+If you can't accept the ban risk, you cannot use an unofficial API. No amount of careful rate-limiting fully eliminates it.
+
+## Pricing at scale
+
+**Unofficial** drivers (Fonnte, Wablas) use a flat monthly subscription — typically **Rp 25k–100k/month** for basic tiers (≈ $1.50–$6/month). That includes essentially unlimited volume within WhatsApp's own limits.
+
+**Official** drivers bill per conversation. A "conversation" is a 24-hour window opened either by the user messaging you (free in many cases) or by you sending a template (charged).
+
+Rough conversation pricing (varies by country and category — verify at each provider):
+
+| Category       | Meta Cloud (direct) | Twilio WhatsApp           |
+|----------------|---------------------|---------------------------|
+| Service        | Free (user-initiated) | Free + Twilio usage fee |
+| Utility        | $0.005–$0.05        | $0.01–$0.06               |
+| Authentication | $0.01–$0.08         | $0.03–$0.10               |
+| Marketing      | $0.02–$0.15         | $0.04–$0.18               |
+
+At 10,000 utility conversations/month:
+- **Fonnte/Wablas**: Rp 25–100k (~$1.50–$6), ignoring per-message incrementals.
+- **Meta Cloud**: ~$50–$500 depending on country.
+- **Twilio WhatsApp**: ~$100–$600.
+
+Unofficial is dramatically cheaper. Official is dramatically safer. Pick based on which failure mode hurts more.
+
+## Indonesia-specific
+
+For Indonesia, the unofficial route is common and culturally well-understood — many production apps use Fonnte or Wablas for low-stakes comms (order updates, promos, internal tools). The ban risk is real but manageable at small volume:
+
+- Keep sends under ~500/day per number.
+- Honor opt-outs immediately — a report from even one recipient can trigger a flag.
+- Maintain 2–3 backup numbers registered with the same provider; swap if the primary goes down.
+- Warm new numbers gradually over the first weeks.
+- **Don't** blast cold contacts — that's the #1 way to get banned.
+
+For anything customer-critical (OTP, order-arrival alerts where failure means support tickets), **pay for Twilio or Meta Cloud API**. The cost is worth the reliability.
+
+## Self-hosted (WAHA)
+
+Use WAHA when:
+
+- You need WhatsApp data to stay on your infra (compliance, legal).
+- You want to own the stack, not rent it.
+- You're comfortable running Docker in production and have ops capacity.
+
+Don't use WAHA when:
+
+- You can't accept downtime from session disconnects (WhatsApp Web sometimes logs sessions out, requiring re-scan).
+- Your team can't absorb the WAHA upgrade cycle.
+- The cost of a banned number is high — WAHA uses the same unofficial protocol as Fonnte/Wablas; same ban risk.
+
+## Migration paths
+
+Switching WhatsApp providers is more involved than switching email because:
+
+- You may need a different phone number (official APIs require you to register a number with WhatsApp Business).
+- Recipients see the change (your contact name may disappear from their chat, or messages may look different).
+- Templates have to be re-approved on the new provider.
+
+Plan migrations carefully — ideally during a quiet period, with communication to frequent customer contacts.
+
+## Multi-provider pattern
+
+Register primary and backup under different channel names. If the primary starts failing, your `OnError` handler can switch notifications to the backup:
+
+```go
+notifier.RegisterChannel("whatsapp",         fonnte.New(/* primary */))
+notifier.RegisterChannel("whatsapp-backup",  wablas.New(/* backup */))
+```
+
+This is a decent reliability lift for unofficial providers. Not needed (and often not wanted) for official ones — their reliability is already high.

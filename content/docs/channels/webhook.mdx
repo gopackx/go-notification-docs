@@ -1,0 +1,91 @@
+---
+title: Webhook (Generic)
+description: Fire a signed HTTP POST at any URL. Glue for custom integrations.
+---
+
+The webhook channel POSTs a JSON payload to a URL you configure. Use it to:
+
+- Push notifications into a system this library doesn't have a native driver for.
+- Trigger internal services (your analytics pipeline, a Zapier/Make/n8n flow, another microservice).
+- Prototype a new driver idea before writing a proper one.
+
+## Setup
+
+```go
+import "github.com/gopackx/go-notification/channel/webhook"
+
+notifier.RegisterChannel("ops-webhook", webhook.New(webhook.Config{
+    URL:    os.Getenv("OPS_WEBHOOK_URL"),
+    Secret: os.Getenv("OPS_WEBHOOK_SECRET"), // used for HMAC signing
+    Headers: map[string]string{
+        "X-Source": "go-notification",
+    },
+}))
+```
+
+## Sending
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"ops-webhook"}
+}
+
+func (n OrderShipped) ToWebhook(u notification.Notifiable) *webhook.Message {
+    return webhook.NewMessage().
+        Event("order.shipped").
+        Payload(map[string]any{
+            "order_id":  n.OrderID,
+            "user_id":   u.(User).ID,
+            "shipped_at": time.Now().UTC(),
+        })
+}
+```
+
+## Configuration reference
+
+| Field       | Type                | Required | Description                                                     |
+|-------------|---------------------|----------|-----------------------------------------------------------------|
+| `URL`       | `string`            | yes      | Destination URL.                                                |
+| `Secret`    | `string`            | no       | HMAC-SHA256 secret. If set, sends `X-Signature` header.          |
+| `Method`    | `string`            | no       | HTTP method. Default: `"POST"`.                                 |
+| `Headers`   | `map[string]string` | no       | Static headers to include on every request.                      |
+| `Timeout`   | `time.Duration`     | no       | HTTP timeout per send. Default: `30s`.                           |
+
+## Request format
+
+```
+POST /your-webhook HTTP/1.1
+Content-Type: application/json
+X-Signature: sha256=<hex-hmac-of-body>
+X-Source: go-notification
+
+{
+  "event": "order.shipped",
+  "sent_at": "2026-04-18T10:15:03Z",
+  "notifiable": { "type": "user", "id": 123 },
+  "data": { "order_id": "A-1024", ... }
+}
+```
+
+## Verifying signatures on the receiver
+
+```go
+func verify(secret, body []byte, signatureHeader string) bool {
+    mac := hmac.New(sha256.New, secret)
+    mac.Write(body)
+    expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(expected), []byte(signatureHeader))
+}
+```
+
+Always compare with `hmac.Equal`, never `==` — the former is constant-time.
+
+## Non-2xx responses
+
+The driver treats any response outside 2xx as a failed send and retries according to the notifier's retry policy. If your downstream rejects duplicates, use an idempotency key in the payload and de-dupe on the receiver.
+
+## Troubleshooting
+
+- **Timeouts under load** — increase `Timeout`, or make the receiver respond `202 Accepted` fast and do work async.
+- **Receiver sees body-less request** — check that your reverse proxy (Nginx, Cloudflare) isn't stripping POST bodies on retry.
+- **Signature mismatch** — usually a whitespace/encoding difference on the receiver. Compare hashes with the exact raw body bytes, not a re-serialized version.

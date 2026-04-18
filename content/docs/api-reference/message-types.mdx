@@ -1,0 +1,185 @@
+---
+title: Message Types
+description: Per-channel message struct reference. All builder methods and fields.
+---
+
+Every channel has a message struct you build via `NewMessage()` inside a `To<Channel>()` method. This page is the field reference for each.
+
+## `mail.Message`
+
+```go
+type Message struct {
+    // ...internal
+}
+
+// Builders
+func (m *Message) Subject(s string) *Message
+func (m *Message) From(addr, name string) *Message         // optional override
+func (m *Message) ReplyTo(addr string) *Message
+func (m *Message) Cc(addrs ...string) *Message
+func (m *Message) Bcc(addrs ...string) *Message
+
+func (m *Message) Greeting(s string) *Message
+func (m *Message) Line(s string) *Message                  // body paragraph
+func (m *Message) Action(label, url string) *Message       // button
+func (m *Message) Salutation(s string) *Message            // signature line
+
+func (m *Message) Template(name string, data any) *Message
+func (m *Message) TextTemplate(name string, data any) *Message
+
+func (m *Message) Attach(name string, body []byte, mime string) *Message
+func (m *Message) Header(key, value string) *Message
+```
+
+## `whatsapp.Message`
+
+```go
+func (m *Message) Text(s string) *Message
+func (m *Message) Image(url string) *Message
+func (m *Message) Video(url string) *Message
+func (m *Message) Document(url, filename string) *Message
+func (m *Message) Audio(url string) *Message
+func (m *Message) Caption(s string) *Message
+
+// Official-API only (Twilio, Meta Cloud)
+func (m *Message) Template(name string, vars []string) *Message
+func (m *Message) Buttons(btns ...Button) *Message
+```
+
+## `sms.Message`
+
+```go
+func (m *Message) Text(s string) *Message
+func (m *Message) From(sender string) *Message // override per-message
+```
+
+## `push.Message`
+
+```go
+func (m *Message) Title(s string) *Message
+func (m *Message) Body(s string) *Message
+func (m *Message) Badge(n int) *Message
+func (m *Message) Sound(name string) *Message
+func (m *Message) Data(key string, value any) *Message
+func (m *Message) ImageURL(url string) *Message
+
+func (m *Message) Android(cfg AndroidConfig) *Message
+func (m *Message) IOS(cfg IOSConfig) *Message
+func (m *Message) Web(cfg WebConfig) *Message
+```
+
+```go
+type AndroidConfig struct {
+    Priority     string // "normal" | "high"
+    Channel      string
+    CollapseKey  string
+    TTL          time.Duration
+}
+
+type IOSConfig struct {
+    Sound            string
+    Badge            int
+    ContentAvailable bool
+    MutableContent   bool
+    InterruptionLevel string // "passive" | "active" | "time-sensitive" | "critical"
+}
+
+type WebConfig struct {
+    Icon         string
+    FCMOptions   map[string]string
+}
+```
+
+## `slack.Message`
+
+```go
+func (m *Message) Text(s string) *Message
+func (m *Message) Channel(c string) *Message       // override per-message
+func (m *Message) Username(u string) *Message      // override display name
+func (m *Message) IconEmoji(e string) *Message     // ":bell:"
+func (m *Message) ThreadTS(ts string) *Message     // post in a thread
+func (m *Message) Attachment(a *Attachment) *Message
+func (m *Message) Block(b any) *Message            // Slack Block Kit
+```
+
+```go
+type Attachment struct { /* builder */ }
+
+func NewAttachment() *Attachment
+func (a *Attachment) Color(c string) *Attachment      // "good" | "warning" | "danger" | "#hex"
+func (a *Attachment) Pretext(s string) *Attachment
+func (a *Attachment) Title(s, link string) *Attachment
+func (a *Attachment) Text(s string) *Attachment
+func (a *Attachment) Field(title, value string, short bool) *Attachment
+func (a *Attachment) Action(label, url string) *Attachment
+```
+
+## `telegram.Message`
+
+```go
+func (m *Message) Text(s string) *Message
+func (m *Message) ParseMode(mode string) *Message // "Markdown" | "MarkdownV2" | "HTML"
+func (m *Message) DisableWebPagePreview(b bool) *Message
+func (m *Message) DisableNotification(b bool) *Message
+func (m *Message) InlineKeyboard(rows ...[]telegram.Button) *Message
+```
+
+## `discord.Message`
+
+```go
+func (m *Message) Content(s string) *Message
+func (m *Message) Username(u string) *Message
+func (m *Message) AvatarURL(url string) *Message
+func (m *Message) TTS(b bool) *Message
+func (m *Message) Embed(e *Embed) *Message   // up to 10
+```
+
+```go
+type Embed struct { /* builder */ }
+
+func NewEmbed() *Embed
+func (e *Embed) Title(s string) *Embed
+func (e *Embed) URL(u string) *Embed
+func (e *Embed) Description(s string) *Embed
+func (e *Embed) Color(c int) *Embed
+func (e *Embed) Field(name, value string, inline bool) *Embed
+func (e *Embed) Footer(text, iconURL string) *Embed
+func (e *Embed) Image(url string) *Embed
+func (e *Embed) Thumbnail(url string) *Embed
+func (e *Embed) Timestamp(t time.Time) *Embed
+func (e *Embed) Author(name, url, iconURL string) *Embed
+```
+
+## `teams.Message`
+
+```go
+func (m *Message) Title(s string) *Message
+func (m *Message) Text(s string) *Message
+func (m *Message) Color(hex string) *Message
+func (m *Message) Fact(name, value string) *Message
+func (m *Message) Action(label, url string) *Message
+func (m *Message) Card(card AdaptiveCard) *Message // for custom Adaptive Cards
+```
+
+## `webhook.Message`
+
+```go
+func (m *Message) Event(name string) *Message
+func (m *Message) Payload(data any) *Message
+func (m *Message) Header(key, value string) *Message
+```
+
+## Database — no builder
+
+The database channel takes a plain `map[string]any` from `ToDatabase()`:
+
+```go
+func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any {
+    return map[string]any{
+        "type":    "order.shipped",
+        "order_id": n.OrderID,
+    }
+}
+```
+
+Keys are free-form. `type` is treated specially — it populates the `type` column of the notifications table. Everything else goes into the `data` JSONB/JSON/TEXT column.

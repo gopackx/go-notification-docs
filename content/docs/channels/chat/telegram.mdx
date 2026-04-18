@@ -1,0 +1,69 @@
+---
+title: Telegram
+description: Send notifications via a Telegram Bot. Free, fast, no ban risk.
+---
+
+Telegram's Bot API is officially supported, free, and has no rate limits that matter for normal notification traffic. Great for internal alerts and customer-opt-in notifications.
+
+## Setup
+
+1. On Telegram, message **@BotFather**.
+2. Run `/newbot` and follow the prompts. You get a **bot token** like `123456:ABC-DEF...`.
+3. Have each recipient message your bot (the bot can't DM users first).
+4. To find their chat ID: hit `https://api.telegram.org/bot<TOKEN>/getUpdates` after they message — `message.chat.id` is the recipient chat ID.
+
+```go
+import "github.com/gopackx/go-notification/channel/chat/telegram"
+
+notifier.RegisterChannel("telegram", telegram.New(telegram.Config{
+    Token: os.Getenv("TELEGRAM_BOT_TOKEN"),
+}))
+```
+
+## Sending
+
+```go
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"telegram"}
+}
+
+func (n OrderShipped) ToTelegram(u notification.Notifiable) *telegram.Message {
+    return telegram.NewMessage().
+        Text("*Your order shipped*\nOrder: " + n.OrderID).
+        ParseMode("Markdown")
+}
+
+func (u User) RouteNotificationFor(channel string) any {
+    if channel == "telegram" {
+        return u.TelegramChatID // e.g. 123456789
+    }
+    return nil
+}
+```
+
+## Groups & channels
+
+- **Groups** — add your bot to the group, promote it if needed, then use the group's chat ID (negative number) as the recipient.
+- **Channels** — add the bot as an admin. Use the channel's `@username` or numeric ID.
+
+## Configuration reference
+
+| Field     | Type     | Required | Description                                                     |
+|-----------|----------|----------|-----------------------------------------------------------------|
+| `Token`   | `string` | yes      | Bot token from BotFather.                                        |
+| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                          |
+
+## Message options
+
+The builder supports:
+
+- `Text(string)` — message body.
+- `ParseMode("Markdown" | "MarkdownV2" | "HTML")` — rich formatting.
+- `DisableWebPagePreview(true)` — don't expand the first URL into a card.
+- `InlineKeyboard(...)` — buttons with URLs or callback data.
+
+## Troubleshooting
+
+- **`chat not found`** — the user hasn't messaged the bot yet, or the chat ID is wrong.
+- **`bot was blocked by the user`** — the recipient blocked your bot. Mark them opted-out in your system.
+- **Markdown doesn't render** — unescaped special characters. Either escape them or use `HTML` parse mode.

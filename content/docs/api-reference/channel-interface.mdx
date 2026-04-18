@@ -1,0 +1,133 @@
+---
+title: Channel Interface
+description: The contract every driver implements — and what you'd implement for a custom channel.
+---
+
+A **Channel** is a driver. It knows how to take a `Notification` + `Notifiable` and actually deliver a message. Every built-in driver (Mailgun, WAHA, Slack, etc.) implements this interface.
+
+## Interface
+
+```go
+type Channel interface {
+    Send(ctx context.Context, notif Notification, to Notifiable) error
+    Name() string
+}
+```
+
+- `Send` — deliver this notification to this recipient via this driver. Called by the notifier's worker pool.
+- `Name` — returns a human-readable driver name (`"mailgun"`, `"waha"`, etc.). Used in logs and errors. Not the same as the name you register the channel under.
+
+## Minimal custom channel
+
+```go
+type LogChannel struct{}
+
+func (c LogChannel) Name() string { return "log" }
+
+func (c LogChannel) Send(ctx context.Context, n notification.Notification, to notification.Notifiable) error {
+    type hasText interface {
+        Text() string
+    }
+
+    // Pull whatever the notification wants to render
+    if r, ok := n.(interface{ ToLog(notification.Notifiable) string }); ok {
+        log.Printf("[notify] %s", r.ToLog(to))
+        return nil
+    }
+    return fmt.Errorf("notification does not implement ToLog")
+}
+
+// Usage
+notifier.RegisterChannel("log", LogChannel{})
+```
+
+## Type-assertion pattern
+
+That `n.(interface{ ToX(...) ... })` pattern is how all built-in drivers work. It's a lightweight way to attach channel-specific render methods to your notification types without the notification type having to import every channel package.
+
+## Optional extensions
+
+The library recognizes several optional interfaces on Channel implementations:
+
+```go
+// Called once at registration. Use for validation, connection setup.
+type InitializableChannel interface {
+    Channel
+    Init(ctx context.Context) error
+}
+
+// Called during Notifier.Close. Use to flush buffers, close HTTP clients.
+type ClosableChannel interface {
+    Channel
+    Close(ctx context.Context) error
+}
+
+// Drivers that want to do their own retry logic can opt out of the notifier's default retry.
+type SelfRetrying interface {
+    Channel
+    SkipRetry() bool
+}
+```
+
+## Receiving channel-specific config
+
+The convention is a `New(cfg)` constructor returning a concrete struct that implements `Channel`:
+
+```go
+package myservice
+
+type Config struct {
+    APIKey  string
+    BaseURL string
+    Timeout time.Duration
+}
+
+type Channel struct { cfg Config; http *http.Client }
+
+func New(cfg Config) *Channel {
+    if cfg.Timeout == 0 { cfg.Timeout = 30 * time.Second }
+    if cfg.BaseURL == "" { cfg.BaseURL = "https://api.myservice.com" }
+    return &Channel{
+        cfg:  cfg,
+        http: &http.Client{Timeout: cfg.Timeout},
+    }
+}
+
+func (c *Channel) Name() string { return "myservice" }
+func (c *Channel) Send(/* ... */) error { /* ... */ }
+```
+
+## Retry-aware errors
+
+If your driver sees a retryable failure (network error, 5xx, 429), return an error wrapping the library's `notification.RetryableError`:
+
+```go
+return notification.RetryableError{Cause: err, RetryAfter: 10 * time.Second}
+```
+
+For non-retryable errors (4xx validation failure), return a plain error — the notifier won't retry.
+
+## Testing a channel
+
+A channel test typically mocks the HTTP layer with `httptest.NewServer`:
+
+```go
+func TestMyChannelSend(t *testing.T) {
+    srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(200)
+    }))
+    defer srv.Close()
+
+    ch := myservice.New(myservice.Config{
+        APIKey:  "test",
+        BaseURL: srv.URL,
+    })
+
+    err := ch.Send(ctx, testNotification{}, testUser{})
+    require.NoError(t, err)
+}
+```
+
+## Full walkthrough
+
+See **[Building a Custom Channel](/docs/guides/custom-channel)** for a complete example, from interface to HTTP to error handling to retry semantics.

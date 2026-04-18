@@ -1,0 +1,43 @@
+---
+title: Overview
+description: A unified Go library for sending notifications across email, WhatsApp, SMS, chat, push, and in-app channels.
+---
+
+**go-notification** is a Go library that gives you one API for every notification channel. Define a notification once, then fan it out across email, WhatsApp, SMS, Slack, Telegram, push, database, webhooks, and more.
+
+## What it gives you
+
+- **24 built-in drivers** across 7 channel families — no vendor lock-in.
+- **Async worker pool** with retry, exponential backoff, and rate limiting, on by default.
+- **Fluent builders** for each channel (`MailMessage{}`, `WhatsAppMessage{}`, `PushMessage{}`, ...).
+- **Per-user channel routing** via a `Notifiable` interface, Laravel-style.
+- **In-app notifications** with a database channel that supports Postgres, MySQL, and SQLite.
+- **Zero third-party SDKs** — every driver is raw HTTP for a minimal footprint.
+
+## A minimal example
+
+```go
+notifier := notification.New(notification.Config{})
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: os.Getenv("MAILGUN_API_KEY"),
+    From:   "noreply@example.com",
+}))
+
+notifier.Send(ctx, user, OrderShipped{OrderID: "1234"})
+```
+
+That's it. The notification defines which channels to use via `Via()`, and go-notification dispatches to each in parallel with retries.
+
+## Where to go next
+
+- **[Installation](/docs/getting-started/installation)** — add it to your project.
+- **[Quick Start](/docs/getting-started/quick-start)** — send your first notification in 5 minutes.
+- **[Channel Overview](/docs/channels/overview)** — compare all 24 drivers at a glance.
+- **[FAQ](/docs/faq)** — the questions you're about to ask.
+
+## Philosophy
+
+- **Boring beats clever.** Raw `net/http`, raw `database/sql`, no ORM.
+- **Explicit beats magic.** You register channels by name. You decide what runs async.
+- **Cloud-first caveats.** We call out SMTP port blocking, ban risk on unofficial WhatsApp APIs, and free-tier limits — loudly.

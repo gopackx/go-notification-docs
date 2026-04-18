@@ -1,0 +1,64 @@
+---
+title: Mailgun
+description: Send transactional email via the Mailgun HTTP API.
+---
+
+Mailgun is an API-based email service. It uses HTTPS (port 443), so it works on every cloud provider without any port-unblocking tickets.
+
+## Pricing
+
+- **Free** — 100 emails/day (first 3 months on the Flex plan).
+- **Paid** — $0.80 per 1,000 emails after the free tier, or from $15/month on fixed plans.
+
+Always verify pricing at https://mailgun.com/pricing — it moves.
+
+## Setup
+
+1. Create an account at https://mailgun.com.
+2. Add and verify your sending domain (DNS TXT/MX records).
+3. Copy your **API key** from the Mailgun dashboard.
+
+```go
+import "github.com/gopackx/go-notification/channel/mail/mailgun"
+
+notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    Domain: "mg.example.com",
+    APIKey: os.Getenv("MAILGUN_API_KEY"),
+    From:   "noreply@example.com",
+    Region: "us",
+}))
+```
+
+## Configuration reference
+
+| Field    | Type     | Required | Description                                                       |
+|----------|----------|----------|-------------------------------------------------------------------|
+| `Domain` | `string` | yes      | Your verified Mailgun sending domain (e.g. `mg.example.com`).     |
+| `APIKey` | `string` | yes      | Mailgun private API key. Store in an env var, never in git.       |
+| `From`   | `string` | yes      | Default sender address (must be on the verified domain).          |
+| `Region` | `string` | no       | `"us"` (default) or `"eu"` — must match the region your domain is registered in. |
+| `Timeout`| `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
+
+## Sending
+
+Same fluent builder as every other email driver:
+
+```go
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        Subject("Your order shipped").
+        Line("Hi, your order is on its way.").
+        Action("Track package", "https://example.com/track")
+}
+```
+
+## Webhook events (optional)
+
+Mailgun can POST delivery, open, click, bounce, and complaint events back to you. This is orthogonal to go-notification — configure webhooks in the Mailgun dashboard and handle them in your own HTTP handler. The driver itself only sends.
+
+## Troubleshooting
+
+- **`401 Unauthorized`** — wrong API key, or the key is for a different region (US vs. EU).
+- **`Forbidden: domain not found`** — `Domain` field doesn't match a verified domain on your account.
+- **Mail arrives but is flagged spam** — verify SPF, DKIM, and DMARC records in the Mailgun domain setup screen. All three matter.
+- **Free-tier exhausted earlier than expected** — the 100/day window resets daily, not monthly.
