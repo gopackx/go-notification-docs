@@ -1,29 +1,21 @@
+import Image from 'next/image';
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 
 export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
       <>
-        <span
-          aria-hidden
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-fd-primary text-fd-primary-foreground text-xs font-bold"
-        >
-          GN
-        </span>
+        <Image
+          src="/go-notification-logo-transparent.png"
+          alt="go-notification"
+          width={28}
+          height={28}
+          priority
+          className="h-7 w-7 object-contain"
+        />
         <span className="font-semibold">go-notification</span>
       </>
     ),
   },
-  links: [
-    {
-      text: 'Docs',
-      url: '/docs',
-      active: 'nested-url',
-    },
-    {
-      text: 'GitHub',
-      url: 'https://github.com/gopackx/go-notification',
-      external: true,
-    },
-  ],
+  links: [],
 };
