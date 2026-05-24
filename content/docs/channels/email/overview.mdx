@@ -30,16 +30,19 @@ Free tiers change. Check each provider's pricing page before committing.
 ## Quick Start
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/mailgun"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+)
 
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
     Domain: "mg.example.com",
     APIKey: os.Getenv("MAILGUN_API_KEY"),
-    From:   "noreply@example.com",
+    From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 
-Then return `"mail"` from your notification's `Via()` and implement `ToMail()`:
+The driver registers itself as `"mail"`. Return that from your notification's `Via()` and implement `ToMail()`:
 
 ```go
 func (n OrderShipped) Via(u notification.Notifiable) []string {
@@ -48,8 +51,9 @@ func (n OrderShipped) Via(u notification.Notifiable) []string {
 
 func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order shipped").
-        Line("Hi, your order is on its way.").
+        SetSubject("Your order shipped").
+        SetGreeting("Hi there!").
+        Line("Your order is on its way.").
         Action("Track package", "https://example.com/track")
 }
 ```

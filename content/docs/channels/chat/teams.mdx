@@ -26,23 +26,50 @@ Microsoft announced deprecation of Office 365 Connectors for Teams. New channels
 ```go
 import "github.com/gopackx/go-notification/channel/chat/teams"
 
-notifier.RegisterChannel("teams", teams.New(teams.Config{
+notifier.RegisterChannel(teams.New(teams.Config{
+    Name:       "teams",
     WebhookURL: os.Getenv("TEAMS_WEBHOOK_URL"),
 }))
 ```
 
 ## Sending
 
-Teams messages use an **Adaptive Card** format. The builder produces one:
+Teams messages use a card payload. Set it on the `TeamsCard` field of the `chat.Message` (a `map[string]any` rendered as JSON):
 
 ```go
-func (n DeployStarted) ToTeams(u notification.Notifiable) *teams.Message {
-    return teams.NewMessage().
-        Title("Deploy started: " + n.Service).
-        Text("Environment: " + n.Env).
-        Fact("Commit", n.Commit).
-        Fact("Actor",  n.Actor).
-        Action("Open build", n.BuildURL)
+import "github.com/gopackx/go-notification/channel/chat"
+
+func (n DeployStarted) Via(u notification.Notifiable) []string {
+    return []string{"teams"}
+}
+
+func (n DeployStarted) ToChat(u notification.Notifiable) *chat.Message {
+    msg := chat.NewMessage().SetText("Deploy started: " + n.Service)
+    msg.TeamsCard = map[string]any{
+        "@type":    "MessageCard",
+        "@context": "https://schema.org/extensions",
+        "summary":  "Deploy started: " + n.Service,
+        "title":    "Deploy started: " + n.Service,
+        "text":     "Environment: " + n.Env,
+        "sections": []map[string]any{
+            {
+                "facts": []map[string]any{
+                    {"name": "Commit", "value": n.Commit},
+                    {"name": "Actor", "value": n.Actor},
+                },
+            },
+        },
+        "potentialAction": []map[string]any{
+            {
+                "@type": "OpenUri",
+                "name":  "Open build",
+                "targets": []map[string]any{
+                    {"os": "default", "uri": n.BuildURL},
+                },
+            },
+        },
+    }
+    return msg
 }
 ```
 
@@ -51,6 +78,7 @@ func (n DeployStarted) ToTeams(u notification.Notifiable) *teams.Message {
 | Field         | Type     | Required | Description                                                    |
 |---------------|----------|----------|----------------------------------------------------------------|
 | `WebhookURL`  | `string` | yes      | Teams workflow or connector URL.                                |
+| `Name`        | `string` | no       | Channel name used by `Via()`. Defaults to `"chat"`.            |
 | `Timeout`     | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
 
 ## Caveats

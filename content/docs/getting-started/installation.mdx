@@ -5,7 +5,7 @@ description: Add go-notification to your Go project.
 
 ## Requirements
 
-- **Go 1.21 or newer**
+- **Go 1.22 or newer**
 - For the database channel: PostgreSQL, MySQL, or SQLite — connected via `database/sql`.
 
 ## Install
@@ -14,21 +14,28 @@ description: Add go-notification to your Go project.
 go get github.com/gopackx/go-notification
 ```
 
-That's the entire dependency. Drivers for specific providers live under subpackages and are pulled in when you import them.
+That's the entire dependency — the core has no external SDKs. Drivers for specific providers live under subpackages and are pulled in only when you import them.
 
 ## Import what you need
 
-You only import the drivers you actually use. Nothing is enabled by default — there is no wildcard import.
+The root module path is `github.com/gopackx/go-notification`, and its package name is `notification`. You import the root package for the engine, then add only the driver subpackages you actually use — nothing is enabled by default, and there is no wildcard import.
 
 ```go
 import (
-    "github.com/gopackx/go-notification/notification"
+    notification "github.com/gopackx/go-notification"
+    "github.com/gopackx/go-notification/channel/mail"
     "github.com/gopackx/go-notification/channel/mail/mailgun"
     "github.com/gopackx/go-notification/channel/whatsapp/waha"
 )
 ```
 
 This keeps the binary small. If you never use Slack, the Slack driver isn't compiled in.
+
+<Callout type="info">
+  The named import (`notification "github.com/..."`) is conventional because the
+  path ends in `go-notification` but the package is named `notification`. The
+  alias makes that explicit.
+</Callout>
 
 ## Verify
 
@@ -37,11 +44,13 @@ package main
 
 import (
     "fmt"
-    "github.com/gopackx/go-notification/notification"
+
+    notification "github.com/gopackx/go-notification"
 )
 
 func main() {
     notifier := notification.New(notification.Config{})
+    defer notifier.Close()
     fmt.Println("go-notification ready:", notifier != nil)
 }
 ```

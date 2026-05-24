@@ -40,25 +40,29 @@ package main
 
 import (
     "context"
+    "fmt"
     "log"
     "os"
     "time"
 
-    "github.com/gopackx/go-notification/notification"
+    notification "github.com/gopackx/go-notification"
+    "github.com/gopackx/go-notification/channel/whatsapp"
     "github.com/gopackx/go-notification/channel/whatsapp/waha"
-    "github.com/gopackx/go-notification/message/whatsapp"
 )
 
 type Customer struct {
+    ID    string
     Name  string
     Phone string // E.164, e.g. "+628123456789"
 }
 
-func (c Customer) RouteNotificationFor(channel string) any {
+func (c Customer) GetID() string { return c.ID }
+
+func (c Customer) RouteNotificationFor(channel string) string {
     if channel == "whatsapp" {
         return c.Phone
     }
-    return nil
+    return ""
 }
 
 type PaymentReceived struct {
@@ -72,7 +76,7 @@ func (n PaymentReceived) Via(notifiable notification.Notifiable) []string {
 
 func (n PaymentReceived) ToWhatsApp(notifiable notification.Notifiable) *whatsapp.Message {
     c := notifiable.(Customer)
-    return whatsapp.NewMessage().Text(
+    return whatsapp.NewMessage().SetText(
         "Halo " + c.Name + ",\n\n" +
             "Pembayaran sebesar Rp" + fmt.Sprintf("%.0f", n.Amount) +
             " untuk invoice *" + n.Invoice + "* telah kami terima.\n\n" +
@@ -82,18 +86,18 @@ func (n PaymentReceived) ToWhatsApp(notifiable notification.Notifiable) *whatsap
 
 func main() {
     notifier := notification.New(notification.Config{
-        OnError: func(_ context.Context, err notification.Error) {
-            log.Printf("send failed: %v", err.Err)
+        OnError: func(_ context.Context, no notification.Notifiable, channel string, err error) {
+            log.Printf("send failed: %v", err)
         },
     })
 
-    notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+    notifier.RegisterChannel(waha.New(waha.Config{
         BaseURL:   "http://localhost:3000",
         APIKey:    os.Getenv("WAHA_API_KEY"),
         SessionID: "default",
     }))
 
-    customer := Customer{Name: "Dani", Phone: "+628123456789"}
+    customer := Customer{ID: "1", Name: "Dani", Phone: "+628123456789"}
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
@@ -103,7 +107,7 @@ func main() {
         Invoice: "INV-2026-042",
     })
 
-    notifier.Close(ctx)
+    notifier.Close()
 }
 ```
 

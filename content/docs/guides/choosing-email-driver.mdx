@@ -55,10 +55,10 @@ The whole point of go-notification — swap the registration, keep the notificat
 
 ```go
 // Before
-notifier.RegisterChannel("mail", mailgun.New(/* ... */))
+notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail" /* ... */}))
 
 // After — one line change
-notifier.RegisterChannel("mail", postmark.New(/* ... */))
+notifier.RegisterChannel(postmark.New(postmark.Config{Name: "mail" /* ... */}))
 ```
 
 Your `ToMail()` methods don't change.

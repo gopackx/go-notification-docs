@@ -5,59 +5,64 @@ description: Build a bell-icon notification center backed by the database channe
 
 A complete in-app notification feature — stored in Postgres, queried via the database channel's API, exposed over HTTP, displayed in a front-end bell dropdown.
 
-## Step 1 — Auto-migrate the notifications table
+## Step 1 — Migrate the notifications table
 
 ```go
-import "github.com/gopackx/go-notification/channel/database"
+import (
+    notification "github.com/gopackx/go-notification"
+    "github.com/gopackx/go-notification/channel/database"
+    "github.com/gopackx/go-notification/migrate"
+)
 
-dbChannel := database.New(database.Config{
-    DB:     db,
-    Driver: database.DriverPostgres,
-})
-
-if err := dbChannel.AutoMigrate(ctx); err != nil {
+// Create the notifications table once at startup.
+if err := migrate.Up(ctx, db, database.DialectPostgreSQL, "notifications"); err != nil {
     panic(err)
 }
-notifier.RegisterChannel("database", dbChannel)
+
+store := database.NewSQLStore(db, database.DialectPostgreSQL)
+notifier.RegisterChannel(database.New(database.Config{Store: store}))
+
+// Keep a typed handle for the query API used by the HTTP layer.
+dbChannel := notifier.Channel("database").(*database.Channel)
 ```
 
-This creates a `notifications` table with columns: `id`, `type`, `notifiable_type`, `notifiable_id`, `data` (JSON), `read_at`, `created_at`.
+This creates a `notifications` table with columns: `id`, `type`, `notifiable_type`, `notifiable_id`, `title`, `body`, `data` (JSON), `read_at`, `created_at`.
 
 ## Step 2 — Define in-app notification
 
 ```go
 type CommentReceived struct {
-    CommentID int64
+    CommentID  int64
     AuthorName string
-    Excerpt string
+    Excerpt    string
 }
 
 func (n CommentReceived) Via(_ notification.Notifiable) []string {
     return []string{"database"}
 }
 
-func (n CommentReceived) ToDatabase(_ notification.Notifiable) map[string]any {
-    return map[string]any{
-        "type":        "comment.received",
-        "comment_id":  n.CommentID,
-        "author_name": n.AuthorName,
-        "excerpt":     n.Excerpt,
-    }
+func (n CommentReceived) ToDatabase(_ notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("comment.received").
+        SetTitle("New comment from " + n.AuthorName).
+        SetBody(n.Excerpt).
+        AddData("comment_id", n.CommentID).
+        AddData("author_name", n.AuthorName).
+        AddData("excerpt", n.Excerpt)
 }
 ```
 
 ## Step 3 — HTTP endpoints
 
+The query methods take the `Notifiable` itself, so we reconstruct the
+current `User` from the request context.
+
 ```go
 func handleList(dbChannel *database.Channel) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        userID := userIDFromContext(r.Context())
+        user := userFromContext(r.Context())
 
-        items, err := dbChannel.Query(r.Context(), database.Filter{
-            NotifiableType: "user",
-            NotifiableID:   userID,
-            Limit:          50,
-        })
+        items, err := dbChannel.List(r.Context(), user, database.ListOptions{Limit: 50})
         if err != nil { http.Error(w, err.Error(), 500); return }
 
         json.NewEncoder(w).Encode(items)
@@ -66,16 +71,16 @@ func handleList(dbChannel *database.Channel) http.HandlerFunc {
 
 func handleUnreadCount(dbChannel *database.Channel) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        userID := userIDFromContext(r.Context())
+        user := userFromContext(r.Context())
 
-        n, _ := dbChannel.UnreadCount(r.Context(), "user", userID)
+        n, _ := dbChannel.CountUnread(r.Context(), user)
         json.NewEncoder(w).Encode(map[string]int{"count": n})
     }
 }
 
 func handleMarkRead(dbChannel *database.Channel) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+        id := r.PathValue("id")
         if err := dbChannel.MarkAsRead(r.Context(), id); err != nil {
             http.Error(w, err.Error(), 500); return
         }
@@ -85,8 +90,8 @@ func handleMarkRead(dbChannel *database.Channel) http.HandlerFunc {
 
 func handleMarkAllRead(dbChannel *database.Channel) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        userID := userIDFromContext(r.Context())
-        if err := dbChannel.MarkAllAsRead(r.Context(), "user", userID); err != nil {
+        user := userFromContext(r.Context())
+        if err := dbChannel.MarkAllAsRead(r.Context(), user); err != nil {
             http.Error(w, err.Error(), 500); return
         }
         w.WriteHeader(204)

@@ -31,14 +31,14 @@ Switch to an API-based email driver. API drivers use HTTPS (port 443), which is 
 // ❌ SMTP — may be blocked on cloud
 import "github.com/gopackx/go-notification/channel/mail/smtp"
 
-notifier.RegisterChannel("mail", smtp.New(smtp.Config{
+notifier.RegisterChannel(smtp.New(smtp.Config{
     Host: "smtp.gmail.com", Port: 587, /* ... */
 }))
 
 // ✅ Mailgun — uses HTTPS port 443
 import "github.com/gopackx/go-notification/channel/mail/mailgun"
 
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
     Domain: "mg.example.com",
     APIKey: os.Getenv("MAILGUN_API_KEY"),
 }))

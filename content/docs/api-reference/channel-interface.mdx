@@ -3,70 +3,74 @@ title: Channel Interface
 description: The contract every driver implements — and what you'd implement for a custom channel.
 ---
 
-A **Channel** is a driver. It knows how to take a `Notification` + `Notifiable` and actually deliver a message. Every built-in driver (Mailgun, WAHA, Slack, etc.) implements this interface.
+A **Channel** is a driver. It receives an already-formatted message and delivers it. Every built-in driver (Mailgun, WAHA, Slack, etc.) implements this interface.
 
 ## Interface
 
 ```go
 type Channel interface {
-    Send(ctx context.Context, notif Notification, to Notifiable) error
     Name() string
+    Send(ctx context.Context, notifiable Notifiable, message any) error
 }
 ```
 
-- `Send` — deliver this notification to this recipient via this driver. Called by the notifier's worker pool.
-- `Name` — returns a human-readable driver name (`"mailgun"`, `"waha"`, etc.). Used in logs and errors. Not the same as the name you register the channel under.
+- `Name()` — the channel identifier. **This is the string used in `Notification.Via` and the key under which the channel is registered.** Built-in drivers default to their channel family (`"mail"`, `"sms"`, `"chat"`, …) and can be overridden.
+- `Send(ctx, notifiable, message)` — deliver the message. The concrete type of `message` is channel-specific (e.g. `*mail.Message`, `*whatsapp.Message`). The driver type-asserts it and returns `ErrInvalidMessage` on mismatch.
+
+<Callout type="warn">
+  `Send` does **not** receive the `Notification`. By the time `Send` runs, the
+  notification has already been turned into a concrete message by a
+  `Formatter` (see below). The driver only deals with the formatted payload.
+</Callout>
+
+## How a Notification becomes a message: `Formatter`
+
+The notifier converts a `Notification` into a channel-specific message via the optional `Formatter` interface:
+
+```go
+type Formatter interface {
+    Format(n Notification, notifiable Notifiable) (any, error)
+}
+```
+
+A channel may implement `Formatter` directly. The built-in channels do this through an embedded `Base` (e.g. `mail.Base`, `chat.Base`) that calls the notification's `ToMail`/`ToChat`/… method and returns `ErrNoFormatter` when the notification doesn't support that channel. If the channel doesn't implement `Formatter`, the notifier falls back to the notification's `ChannelFormatter`.
 
 ## Minimal custom channel
+
+The simplest path is `channel.Func`, which wraps a send function — no struct required:
+
+```go
+notifier.RegisterChannel(channel.Func("log", func(ctx context.Context, n notification.Notifiable, msg any) error {
+    log.Printf("[notify] to=%s msg=%v", n.GetID(), msg)
+    return nil
+}))
+```
+
+For a real driver, define a struct that implements `Name` and `Send`, and (usually) `Formatter` so the notifier knows how to build your message type:
 
 ```go
 type LogChannel struct{}
 
-func (c LogChannel) Name() string { return "log" }
+func (LogChannel) Name() string { return "log" }
 
-func (c LogChannel) Send(ctx context.Context, n notification.Notification, to notification.Notifiable) error {
-    type hasText interface {
-        Text() string
+func (LogChannel) Format(n notification.Notification, to notification.Notifiable) (any, error) {
+    f, ok := n.(interface{ ToLog(notification.Notifiable) string })
+    if !ok {
+        return nil, notification.ErrNoFormatter
     }
+    return f.ToLog(to), nil
+}
 
-    // Pull whatever the notification wants to render
-    if r, ok := n.(interface{ ToLog(notification.Notifiable) string }); ok {
-        log.Printf("[notify] %s", r.ToLog(to))
-        return nil
+func (LogChannel) Send(ctx context.Context, to notification.Notifiable, message any) error {
+    text, ok := message.(string)
+    if !ok {
+        return notification.ErrInvalidMessage
     }
-    return fmt.Errorf("notification does not implement ToLog")
+    log.Printf("[notify] %s", text)
+    return nil
 }
 
-// Usage
-notifier.RegisterChannel("log", LogChannel{})
-```
-
-## Type-assertion pattern
-
-That `n.(interface{ ToX(...) ... })` pattern is how all built-in drivers work. It's a lightweight way to attach channel-specific render methods to your notification types without the notification type having to import every channel package.
-
-## Optional extensions
-
-The library recognizes several optional interfaces on Channel implementations:
-
-```go
-// Called once at registration. Use for validation, connection setup.
-type InitializableChannel interface {
-    Channel
-    Init(ctx context.Context) error
-}
-
-// Called during Notifier.Close. Use to flush buffers, close HTTP clients.
-type ClosableChannel interface {
-    Channel
-    Close(ctx context.Context) error
-}
-
-// Drivers that want to do their own retry logic can opt out of the notifier's default retry.
-type SelfRetrying interface {
-    Channel
-    SkipRetry() bool
-}
+notifier.RegisterChannel(LogChannel{})
 ```
 
 ## Receiving channel-specific config
@@ -82,30 +86,35 @@ type Config struct {
     Timeout time.Duration
 }
 
-type Channel struct { cfg Config; http *http.Client }
+type Channel struct {
+    cfg  Config
+    http *http.Client
+}
 
 func New(cfg Config) *Channel {
     if cfg.Timeout == 0 { cfg.Timeout = 30 * time.Second }
     if cfg.BaseURL == "" { cfg.BaseURL = "https://api.myservice.com" }
-    return &Channel{
-        cfg:  cfg,
-        http: &http.Client{Timeout: cfg.Timeout},
-    }
+    return &Channel{cfg: cfg, http: &http.Client{Timeout: cfg.Timeout}}
 }
 
 func (c *Channel) Name() string { return "myservice" }
-func (c *Channel) Send(/* ... */) error { /* ... */ }
+func (c *Channel) Send(ctx context.Context, n notification.Notifiable, message any) error { /* ... */ }
 ```
 
 ## Retry-aware errors
 
-If your driver sees a retryable failure (network error, 5xx, 429), return an error wrapping the library's `notification.RetryableError`:
+The notifier wraps `Send` in retry-with-backoff automatically (`Config.MaxRetries`/`RetryDelay`). Retries are **on by default**. To mark a failure as non-retryable (bad credentials, malformed payload, 4xx), wrap it with `middleware.ErrPermanent`:
 
 ```go
-return notification.RetryableError{Cause: err, RetryAfter: 10 * time.Second}
+import "github.com/gopackx/go-notification/middleware"
+
+if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+    return fmt.Errorf("myservice: rejected (%d): %w", resp.StatusCode, middleware.ErrPermanent)
+}
+return fmt.Errorf("myservice: upstream %d", resp.StatusCode) // retryable
 ```
 
-For non-retryable errors (4xx validation failure), return a plain error — the notifier won't retry.
+Backoff is `RetryDelay * 2^(attempt)`, capped at 60s, with up to 25% jitter.
 
 ## Testing a channel
 
@@ -118,12 +127,9 @@ func TestMyChannelSend(t *testing.T) {
     }))
     defer srv.Close()
 
-    ch := myservice.New(myservice.Config{
-        APIKey:  "test",
-        BaseURL: srv.URL,
-    })
+    ch := myservice.New(myservice.Config{APIKey: "test", BaseURL: srv.URL})
 
-    err := ch.Send(ctx, testNotification{}, testUser{})
+    err := ch.Send(ctx, testUser{}, &myMessage{ /* ... */ })
     require.NoError(t, err)
 }
 ```

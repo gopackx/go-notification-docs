@@ -12,13 +12,15 @@ import (
     "context"
     "log"
     "os"
+    "strconv"
 
-    "github.com/gopackx/go-notification/notification"
-    "github.com/gopackx/go-notification/channel/mail/mailgun"
-    "github.com/gopackx/go-notification/channel/whatsapp/waha"
+    notification "github.com/gopackx/go-notification"
     "github.com/gopackx/go-notification/channel/database"
-    "github.com/gopackx/go-notification/message/mail"
-    "github.com/gopackx/go-notification/message/whatsapp"
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+    "github.com/gopackx/go-notification/channel/whatsapp"
+    "github.com/gopackx/go-notification/channel/whatsapp/waha"
+    "github.com/gopackx/go-notification/migrate"
 
     "database/sql"
     _ "github.com/lib/pq"
@@ -33,13 +35,18 @@ type User struct {
     WantsWhatsApp bool
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) GetID() string { return strconv.FormatInt(u.ID, 10) }
+
+func (u User) RouteNotificationFor(channel string) string {
     switch channel {
-    case "mail":     return u.Email
-    case "whatsapp": return u.Phone
-    case "database": return u.ID
+    case "mail":
+        return u.Email
+    case "whatsapp":
+        return u.Phone
+    case "database":
+        return u.GetID()
     }
-    return nil
+    return ""
 }
 ```
 
@@ -61,23 +68,24 @@ func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
 
 func (n OrderShipped) ToMail(_ notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order shipped").
-        Greeting("Hey,").
+        SetSubject("Your order shipped").
+        SetGreeting("Hey,").
         Line("Your order " + n.OrderID + " is on its way.").
         Action("Track package", n.TrackingURL)
 }
 
 func (n OrderShipped) ToWhatsApp(_ notification.Notifiable) *whatsapp.Message {
     return whatsapp.NewMessage().
-        Text("📦 Your order *" + n.OrderID + "* shipped. Track it: " + n.TrackingURL)
+        SetText("📦 Your order *" + n.OrderID + "* shipped. Track it: " + n.TrackingURL)
 }
 
-func (n OrderShipped) ToDatabase(_ notification.Notifiable) map[string]any {
-    return map[string]any{
-        "type":         "order.shipped",
-        "order_id":     n.OrderID,
-        "tracking_url": n.TrackingURL,
-    }
+func (n OrderShipped) ToDatabase(_ notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("order.shipped").
+        SetTitle("Order shipped").
+        SetBody("Your order " + n.OrderID + " is on its way.").
+        AddData("order_id", n.OrderID).
+        AddData("tracking_url", n.TrackingURL)
 }
 ```
 
@@ -89,31 +97,29 @@ func main() {
     if err != nil { panic(err) }
 
     notifier := notification.New(notification.Config{
-        OnError: func(_ context.Context, err notification.Error) {
-            log.Printf("send failed: channel=%s err=%v", err.Channel, err.Err)
+        OnError: func(_ context.Context, no notification.Notifiable, channel string, err error) {
+            log.Printf("send failed: channel=%s err=%v", channel, err)
         },
     })
 
-    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    notifier.RegisterChannel(mailgun.New(mailgun.Config{
         Domain: "mg.example.com",
         APIKey: os.Getenv("MAILGUN_API_KEY"),
-        From:   "noreply@example.com",
+        From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
     }))
 
-    notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+    notifier.RegisterChannel(waha.New(waha.Config{
         BaseURL:   "http://localhost:3000",
         APIKey:    os.Getenv("WAHA_API_KEY"),
         SessionID: "default",
     }))
 
-    dbChannel := database.New(database.Config{
-        DB:     db,
-        Driver: database.DriverPostgres,
-    })
-    if err := dbChannel.AutoMigrate(context.Background()); err != nil {
+    // Create the notifications table, then register the database channel.
+    if err := migrate.Up(context.Background(), db, database.DialectPostgreSQL, "notifications"); err != nil {
         panic(err)
     }
-    notifier.RegisterChannel("database", dbChannel)
+    store := database.NewSQLStore(db, database.DialectPostgreSQL)
+    notifier.RegisterChannel(database.New(database.Config{Store: store}))
 
     user := User{
         ID: 1, Name: "Dani", Email: "dani@example.com",
@@ -129,7 +135,7 @@ func main() {
         log.Fatal(err)
     }
 
-    notifier.Close(ctx)
+    notifier.Close()
 }
 ```
 

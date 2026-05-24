@@ -6,30 +6,41 @@ description: Fluent, chainable builders for every channel. Minimal surface area,
 Every channel exposes a message builder via `NewMessage()`. The builders are designed to be:
 
 - **Chainable** — each method returns the builder so you can write it as one expression.
-- **Channel-specific** — `mail.Message` has `.Subject()`, `whatsapp.Message` has `.Media()`, etc. No leaky common base.
+- **Channel-specific** — `mail.Message` has `SetSubject()`, `whatsapp.Message` has `SetImage()`, etc. No leaky common base.
 - **Validation-light** — builders don't try to validate upstream provider rules (that's the driver's job). They only guard against obvious local mistakes (nil payload, empty required fields).
+
+Message types live under `github.com/gopackx/go-notification/channel/<family>`. Slack, Telegram, Discord, and Teams all share the single `chat` family — there is no per-provider message type.
 
 ## Mail
 
 ```go
-import "github.com/gopackx/go-notification/message/mail"
+import "github.com/gopackx/go-notification/channel/mail"
 
 mail.NewMessage().
-    Subject("Your order shipped").
-    Greeting("Hi, Dani").                       // optional
+    SetSubject("Your order shipped").
+    SetGreeting("Hi, Dani").                     // optional
     Line("Your order A-1024 is on its way.").
-    Action("Track package", "https://...").     // renders as button
+    Action("Track package", "https://...").      // renders as button
     Line("Thanks for shopping with us.").
-    Salutation("— The team").                   // optional
-    Attach("invoice.pdf", pdfBytes, "application/pdf")
+    SetSalutation("— The team").                 // optional
+    Attach(mail.Attachment{
+        Filename:    "invoice.pdf",
+        ContentType: "application/pdf",
+        Data:        pdfBytes,
+    })
 ```
 
-Template-driven alternative:
+You can also set the body directly with `SetText` / `SetHTML` instead of the
+`Line`/`Action` builder, and refine delivery with `SetFrom`, `AddTo`,
+`SetPriority`, `AddHeader`, and `AddTag`:
 
 ```go
 mail.NewMessage().
-    Subject("Welcome").
-    Template("welcome.html", map[string]any{"name": user.Name})
+    SetFrom("noreply@example.com", "Example").
+    AddTo(user.Email, user.Name).
+    SetSubject("Welcome").
+    SetHTML(renderedHTML).
+    SetPriority(mail.PriorityHigh)
 ```
 
 See [Email Templates](/docs/features/templates) for template setup.
@@ -37,127 +48,146 @@ See [Email Templates](/docs/features/templates) for template setup.
 ## WhatsApp
 
 ```go
-import "github.com/gopackx/go-notification/message/whatsapp"
+import "github.com/gopackx/go-notification/channel/whatsapp"
 
 whatsapp.NewMessage().
-    Text("Hi! Your OTP is *" + code + "*. Valid 5 minutes.")
+    SetText("Hi! Your OTP is *" + code + "*. Valid 5 minutes.")
 ```
 
-With media:
+With media — `SetImage` takes the URL and a caption together:
 
 ```go
 whatsapp.NewMessage().
-    Image("https://cdn.example.com/invoice.jpg").
-    Caption("Your invoice")
+    SetImage("https://cdn.example.com/invoice.jpg", "Your invoice")
 ```
 
-Template (for Twilio/Meta official APIs):
+Template (for Twilio/Meta official APIs). `SetTemplate` takes the template
+name, language, and any positional parameters:
 
 ```go
 whatsapp.NewMessage().
-    Template("otp_v2", []string{code}).
-    Text("Your code: " + code) // fallback text
+    SetTemplate("otp_v2", "en", code).
+    SetText("Your code: " + code) // fallback text
 ```
 
 ## SMS
 
 ```go
-import "github.com/gopackx/go-notification/message/sms"
+import "github.com/gopackx/go-notification/channel/sms"
 
-sms.NewMessage().Text("Your OTP: " + code)
+sms.NewMessage().SetText("Your OTP: " + code)
 ```
 
-SMS is deliberately minimal — no rich content, no attachments. Anything more than text is a different channel.
+SMS is deliberately minimal — no rich content, no attachments. Beyond `SetText`
+there's only `SetTo` and `SetFrom`. Anything more is a different channel.
 
 ## Push (FCM)
 
 ```go
-import "github.com/gopackx/go-notification/message/push"
+import "github.com/gopackx/go-notification/channel/push"
 
 push.NewMessage().
-    Title("Order shipped").
-    Body("Track it now").
-    Badge(1).
-    Sound("default").
-    Data("order_id", "A-1024").
-    Android(push.AndroidConfig{Priority: "high"}).
-    IOS(push.IOSConfig{ContentAvailable: true})
+    SetTitle("Order shipped").
+    SetBody("Track it now").
+    SetBadge(1).
+    SetSound("default").
+    SetData("order_id", "A-1024")
 ```
 
-## Slack
+The push payload is provider-agnostic: target with `SetToken` / `SetTokens` /
+`SetTopic`, and pass custom key/value pairs through `SetData` (values are
+strings). Platform-specific config is left to the driver.
+
+## Chat (Slack, Telegram, Discord, Teams)
+
+All four chat providers use one `chat.Message`. The common `SetText` works
+everywhere; provider-specific richness is added with dedicated methods and
+fields.
 
 ```go
-import "github.com/gopackx/go-notification/message/slack"
+import "github.com/gopackx/go-notification/channel/chat"
 
-slack.NewMessage().
-    Text("Deploy started").
-    Attachment(
-        slack.NewAttachment().
-            Color("good").
-            Field("Service", svc, true).
-            Field("Env",     env, true).
-            Action("View build", buildURL),
-    )
+chat.NewMessage().SetText("Deploy started")
 ```
 
-## Telegram
+**Slack** attachments:
 
 ```go
-import "github.com/gopackx/go-notification/message/telegram"
-
-telegram.NewMessage().
-    Text("*Alert*\nBuild failed on `main`").
-    ParseMode("MarkdownV2").
-    DisableWebPagePreview(true)
+chat.NewMessage().
+    SetText("Deploy started").
+    AddSlackAttachment(chat.SlackAttachment{
+        Color: "good",
+        Title: "Build",
+        Fields: []chat.SlackField{
+            {Title: "Service", Value: svc, Short: true},
+            {Title: "Env", Value: env, Short: true},
+        },
+        Footer: "CI",
+    })
 ```
 
-## Discord
+**Telegram** uses `SetParseMode` and a couple of Telegram-specific fields set
+directly on the struct:
 
 ```go
-import "github.com/gopackx/go-notification/message/discord"
-
-discord.NewMessage().
-    Content("Build failed").
-    Embed(
-        discord.NewEmbed().
-            Title("CI #1234").
-            Color(0xFF0000).
-            Field("Branch", "main", true),
-    )
+msg := chat.NewMessage().
+    SetText("*Alert*\nBuild failed on `main`").
+    SetParseMode("MarkdownV2")
+msg.TelegramDisableWebPreview = true
 ```
 
-## Teams
+**Discord** embeds:
 
 ```go
-import "github.com/gopackx/go-notification/message/teams"
+chat.NewMessage().
+    SetText("Build failed").
+    AddDiscordEmbed(chat.DiscordEmbed{
+        Title: "CI #1234",
+        Color: 0xFF0000,
+        Fields: []chat.DiscordField{
+            {Name: "Branch", Value: "main", Inline: true},
+        },
+    })
+```
 
-teams.NewMessage().
-    Title("Deploy").
-    Text("Environment: prod").
-    Fact("Commit", sha).
-    Action("Open build", url)
+**Teams** uses the MessageCard schema via the `TeamsCard` field:
+
+```go
+msg := chat.NewMessage().SetText("Deploy to prod")
+msg.TeamsCard = map[string]any{
+    "title": "Deploy",
+    "text":  "Environment: prod",
+}
 ```
 
 ## Database
 
 ```go
-// ToDatabase just returns a map[string]any — no builder is needed.
-return map[string]any{
-    "type":    "order.shipped",
-    "order_id": orderID,
-}
+import "github.com/gopackx/go-notification/channel/database"
+
+database.NewMessage().
+    SetType("order.shipped").
+    SetTitle("Order shipped").
+    SetBody("Your order is on its way.").
+    AddData("order_id", orderID)
 ```
+
+Use `AddData` to attach payload keys one at a time, or `SetData` to replace the
+whole map at once.
 
 ## Webhook
 
 ```go
-import "github.com/gopackx/go-notification/message/webhook"
+import "github.com/gopackx/go-notification/channel/webhook"
 
 webhook.NewMessage().
-    Event("order.shipped").
-    Payload(map[string]any{"order_id": id}).
-    Header("X-Idempotency-Key", idempotencyKey)
+    SetURL("https://hooks.example.com/notify").
+    SetMethod("POST").
+    SetJSON(map[string]any{"event": "order.shipped", "order_id": id}).
+    AddHeader("X-Idempotency-Key", idempotencyKey)
 ```
+
+Choose the body encoding with `SetJSON`, `SetForm`, or `SetRaw`.
 
 ## Why fluent builders
 

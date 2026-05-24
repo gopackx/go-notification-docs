@@ -11,99 +11,116 @@ The database channel stores notifications in a table so your app can show an in-
 - **MySQL** (5.7+ / MariaDB 10.3+)
 - **SQLite** (3.x)
 
-All three use the same driver. The channel accepts any `*sql.DB`.
+All three use the same channel through a `Store`. The built-in `SQLStore` accepts any `*sql.DB`.
 
 ## Setup
+
+The channel is configured with a `Store`, not a raw `*sql.DB`. Build a `SQLStore` with `database.NewSQLStore(db, dialect)`:
 
 ```go
 import (
     "database/sql"
     _ "github.com/lib/pq"
+
+    notification "github.com/gopackx/go-notification"
     "github.com/gopackx/go-notification/channel/database"
 )
 
 db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 if err != nil { panic(err) }
 
-dbChannel := database.New(database.Config{
-    DB:     db,
-    Driver: database.DriverPostgres, // or DriverMySQL, DriverSQLite
-    Table:  "notifications",         // default: "notifications"
-})
+store := database.NewSQLStore(db, database.DialectPostgreSQL) // or DialectMySQL, DialectSQLite
 
-notifier.RegisterChannel("database", dbChannel)
+notifier.RegisterChannel(database.New(database.Config{
+    Store: store,
+}))
 ```
 
-## Auto migration
+The channel registers itself as `"database"`. To customize the table name, set `store.Table` before registering (default `"notifications"`).
 
-The driver can create the table for you:
+## Migration
+
+The schema lives in the separate `migrate` package. Call `migrate.Up` at boot to create the table (idempotent — uses `CREATE TABLE IF NOT EXISTS`):
 
 ```go
-if err := dbChannel.AutoMigrate(ctx); err != nil {
+import "github.com/gopackx/go-notification/migrate"
+
+if err := migrate.Up(ctx, db, database.DialectPostgreSQL, "notifications"); err != nil {
     panic(err)
 }
 ```
 
-Or run the SQL yourself from the driver's `Schema()` output — useful when migrations are managed by a tool like `golang-migrate`.
+`migrate.Down(ctx, db, dialect, table)` drops the table (intended for tests). The `migrate` package is the single source of truth for the schema, so teams managing migrations elsewhere can copy the statements into their own tooling.
 
 ## Sending
+
+`ToDatabase` returns a `*database.Message` built with the fluent API — not a `map`:
 
 ```go
 func (n OrderShipped) Via(u notification.Notifiable) []string {
     return []string{"database"}
 }
 
-func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any {
-    return map[string]any{
-        "type":     "order.shipped",
-        "order_id": n.OrderID,
-        "message":  "Your order has shipped.",
-    }
+func (n OrderShipped) ToDatabase(u notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("order.shipped").
+        SetTitle("Order shipped").
+        SetBody("Your order has shipped.").
+        AddData("order_id", n.OrderID)
 }
 ```
 
-The resulting row stores: an auto `id`, `type` (from your map or the notification's type name), `notifiable_type`/`notifiable_id` (from the recipient), a JSON `data` blob, `read_at` (nullable), and `created_at`.
+Each row stores: an auto `id`, `type`, `title`, `body`, the recipient's `notifiable_type` (from the optional `GetNotifiableType()`, default `"notifiables"`) and `notifiable_id` (from `GetID()`), a JSON `data` blob, `read_at` (nullable), and `created_at`.
 
 ## Query API
 
-Everything your in-app notification center needs is on the channel itself:
+Reach the channel via `notifier.Channel("database")` and type-assert to `*database.Channel`. Every method takes the `Notifiable` (not loose type/id strings):
 
 ```go
-// Latest 20, all notifications for this user
-items, err := dbChannel.Query(ctx, database.Filter{
-    NotifiableType: "user",
-    NotifiableID:   user.ID,
-    Limit:          20,
-})
+ch := notifier.Channel("database").(*database.Channel)
+
+// Most recent, paginated
+items, err := ch.List(ctx, user, database.ListOptions{Limit: 20, Offset: 0})
+
+// Only unread (most recent first)
+unread, err := ch.Unread(ctx, user, 20)
 
 // Unread count
-n, err := dbChannel.UnreadCount(ctx, "user", user.ID)
+count, err := ch.CountUnread(ctx, user)
 
-// Only unread
-items, err := dbChannel.Unread(ctx, "user", user.ID)
+// Mark one / all as read
+err = ch.MarkAsRead(ctx, notificationID)
+err = ch.MarkAllAsRead(ctx, user)
 
-// Mark one as read
-err := dbChannel.MarkAsRead(ctx, notificationID)
-
-// Mark all as read
-err := dbChannel.MarkAllAsRead(ctx, "user", user.ID)
+// Fetch / delete by id
+one, err := ch.Get(ctx, notificationID)   // returns database.ErrNotFound if missing
+err = ch.Delete(ctx, notificationID)
 ```
+
+`List`/`Unread` return `[]database.StoredNotification` (`ID`, `Type`, `Title`, `Body`, `Data`, `ReadAt *time.Time`, `CreatedAt`, …) — ready to render without re-parsing.
+
+`database.ListOptions` fields: `Limit` (default 50), `Offset`, `UnreadOnly bool`, and `Type string` (filter by notification type).
 
 ## Configuration reference
 
-| Field    | Type          | Required | Description                                                    |
-|----------|---------------|----------|----------------------------------------------------------------|
-| `DB`     | `*sql.DB`     | yes      | Connected database handle. You own its lifecycle.              |
-| `Driver` | `Driver` enum | yes      | `DriverPostgres`, `DriverMySQL`, or `DriverSQLite`.            |
-| `Table`  | `string`      | no       | Override table name. Default: `"notifications"`.                |
+| Field   | Type     | Required | Description                                          |
+|---------|----------|----------|------------------------------------------------------|
+| `Store` | `Store`  | yes      | Persistence backend. Use `database.NewSQLStore(db, dialect)`. |
+| `Name`  | `string` | no       | Override the channel name. Default: `"database"`.    |
+
+`SQLStore` fields you may tune: `DB`, `Dialect`, `Table` (default `"notifications"`).
+
+## Custom stores
+
+`Store` is an interface (`Insert`, `List`, `Get`, `MarkAsRead`, `MarkAllAsRead`, `CountUnread`, `Delete`). Implement it for sharded SQL, Redis, or a document store, then pass your implementation as `Config.Store`.
 
 ## Why no ORM?
 
-This is deliberate. go-notification uses `database/sql` only — no GORM, no Bun, no Ent. You can use your own ORM for the rest of your app; the database channel won't interfere because it owns its own table and queries.
+This is deliberate. go-notification uses `database/sql` only — no GORM, no Bun, no Ent. The database channel owns its own table and queries, so it won't interfere with whatever ORM the rest of your app uses.
 
 ## Pairing with real-time push
 
 The database channel only writes to the DB. For real-time updates (a bell icon that updates without a refresh), combine it with:
 
-- A second channel like WebSocket or server-sent events triggered on the same notification.
-- Or poll the `UnreadCount` endpoint on a timer from the client.
+- A second channel (WebSocket or server-sent events) triggered on the same notification.
+- Or poll `CountUnread` on a timer from the client.

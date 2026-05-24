@@ -9,11 +9,11 @@ No. The library uses `database/sql` directly. No GORM, no Bun, no Ent. You can u
 
 ## Can I use multiple email drivers at the same time?
 
-Yes. Register them with different names and reference the one you want in `Via()`:
+Yes. Give each driver a distinct name (via its `Config.Name`) and reference the one you want in `Via()`. `RegisterChannel` takes the driver itself — the name comes from `driver.Name()`:
 
 ```go
-notifier.RegisterChannel("mail-transactional", sendgrid.New(...))
-notifier.RegisterChannel("mail-marketing",     mailgun.New(...))
+notifier.RegisterChannel(sendgrid.New(sendgrid.Config{Name: "mail-transactional" /* ... */}))
+notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail-marketing" /* ... */}))
 
 func (n OrderShipped) Via(u notification.Notifiable) []string {
     return []string{"mail-transactional"}
@@ -39,12 +39,14 @@ Yes. Implement the `Channel` interface and register it like any built-in driver:
 ```go
 type MyChannel struct{}
 
-func (c *MyChannel) Send(ctx context.Context, n notification.Notification, u notification.Notifiable) error {
+func (c *MyChannel) Name() string { return "mine" }
+
+func (c *MyChannel) Send(ctx context.Context, u notification.Notifiable, message any) error {
     // your send logic
     return nil
 }
 
-notifier.RegisterChannel("mine", &MyChannel{})
+notifier.RegisterChannel(&MyChannel{})
 ```
 
 A full walkthrough will land in the **Custom Channel** guide — coming after Phase 1.
@@ -81,7 +83,7 @@ Each channel is independent. If `whatsapp` fails but `mail` succeeds, only Whats
 
 ## Does `Send()` block?
 
-No — it returns immediately. Dispatch happens on the worker pool. If you need synchronous behavior (for example, in a CLI tool), set `Config.Async = false`.
+No — it returns immediately. Dispatch happens on the worker pool. If you need synchronous behavior (for example, in a CLI tool), set `Config.Async` to `notification.BoolPtr(false)` (or pass `notification.Sync()` on a single `Send`).
 
 ## How do I test notifications without sending real messages?
 

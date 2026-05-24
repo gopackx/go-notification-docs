@@ -9,7 +9,7 @@ description: A unified Go library for sending notifications across email, WhatsA
 
 - **24 built-in drivers** across 7 channel families — no vendor lock-in.
 - **Async worker pool** with retry, exponential backoff, and rate limiting, on by default.
-- **Fluent builders** for each channel (`MailMessage{}`, `WhatsAppMessage{}`, `PushMessage{}`, ...).
+- **Fluent builders** for each channel (`mail.NewMessage()`, `whatsapp.NewMessage()`, `push.NewMessage()`, ...).
 - **Per-user channel routing** via a `Notifiable` interface, Laravel-style.
 - **In-app notifications** with a database channel that supports Postgres, MySQL, and SQLite.
 - **Zero third-party SDKs** — every driver is raw HTTP for a minimal footprint.
@@ -18,10 +18,10 @@ description: A unified Go library for sending notifications across email, WhatsA
 
 ```go
 notifier := notification.New(notification.Config{})
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
     Domain: "mg.example.com",
     APIKey: os.Getenv("MAILGUN_API_KEY"),
-    From:   "noreply@example.com",
+    From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 
 notifier.Send(ctx, user, OrderShipped{OrderID: "1234"})

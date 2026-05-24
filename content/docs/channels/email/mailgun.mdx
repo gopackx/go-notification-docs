@@ -19,12 +19,15 @@ Always verify pricing at https://mailgun.com/pricing — it moves.
 3. Copy your **API key** from the Mailgun dashboard.
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/mailgun"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/mailgun"
+)
 
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
     Domain: "mg.example.com",
     APIKey: os.Getenv("MAILGUN_API_KEY"),
-    From:   "noreply@example.com",
+    From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
     Region: "us",
 }))
 ```
@@ -35,7 +38,7 @@ notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
 |----------|----------|----------|-------------------------------------------------------------------|
 | `Domain` | `string` | yes      | Your verified Mailgun sending domain (e.g. `mg.example.com`).     |
 | `APIKey` | `string` | yes      | Mailgun private API key. Store in an env var, never in git.       |
-| `From`   | `string` | yes      | Default sender address (must be on the verified domain).          |
+| `From`   | `mail.Address` | yes | Default sender (must be on the verified domain).                  |
 | `Region` | `string` | no       | `"us"` (default) or `"eu"` — must match the region your domain is registered in. |
 | `Timeout`| `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
 
@@ -46,7 +49,7 @@ Same fluent builder as every other email driver:
 ```go
 func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order shipped").
+        SetSubject("Your order shipped").
         Line("Hi, your order is on its way.").
         Action("Track package", "https://example.com/track")
 }

@@ -19,14 +19,14 @@ The chat channel family is built for **team-internal** notifications — deploys
 For per-recipient routing, return the chat/user/channel ID from `RouteNotificationFor(channel)`:
 
 ```go
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     switch channel {
     case "slack":    return u.SlackUserID         // U01ABCD...
     case "telegram": return u.TelegramChatID      // 123456789
     case "discord":  return u.DiscordChannelID    // for bot-based Discord
     case "teams":    return u.TeamsChannelWebhook // URL-based
     }
-    return nil
+    return ""
 }
 ```
 
@@ -34,12 +34,12 @@ For shared-channel notifications (everyone sees the same `#alerts` channel), a s
 
 ## Multi-workspace pattern
 
-Multiple Slack workspaces, multiple Teams tenants, multiple Discord servers — register each under its own channel name:
+Multiple Slack workspaces, multiple Teams tenants, multiple Discord servers — register each under its own channel name via `Config.Name`:
 
 ```go
-notifier.RegisterChannel("slack-eng",    slack.NewWebhook(slack.WebhookConfig{URL: engURL}))
-notifier.RegisterChannel("slack-ops",    slack.NewWebhook(slack.WebhookConfig{URL: opsURL}))
-notifier.RegisterChannel("slack-sales",  slack.NewWebhook(slack.WebhookConfig{URL: salesURL}))
+notifier.RegisterChannel(slack.New(slack.Config{Name: "slack-eng",   WebhookURL: engURL}))
+notifier.RegisterChannel(slack.New(slack.Config{Name: "slack-ops",   WebhookURL: opsURL}))
+notifier.RegisterChannel(slack.New(slack.Config{Name: "slack-sales", WebhookURL: salesURL}))
 ```
 
 Then the notification's `Via()` picks which workspace gets the message.

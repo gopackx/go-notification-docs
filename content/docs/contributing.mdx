@@ -25,9 +25,9 @@ Tests should pass out of the box. If they don't, open an issue — that itself i
 ## Conventions
 
 - **Drivers go under `channel/<family>/<provider>`** — e.g., `channel/mail/sendgrid`.
-- **Message builders go under `message/<channel>`** — e.g., `message/slack`.
+- **Message builders live with their family** — e.g., `channel/chat/message.go`, `channel/mail/message.go`.
 - **Raw HTTP only.** Do not introduce third-party SDKs. See [Security & Redaction](/docs/features/security) for why.
-- **`redact:"true"` on secret fields.** Anything that should never appear in logs.
+- **Redact secrets in logs** with `middleware.Redact` / `middleware.RedactAttr`. Never log raw API keys or tokens.
 - **Use `context.Context` everywhere.** Cancellation and deadlines are part of the contract.
 - **No global state.** No `init()` side effects. Channels are constructed, not registered-at-import.
 
@@ -36,7 +36,7 @@ Tests should pass out of the box. If they don't, open an issue — that itself i
 A good new-driver PR includes:
 
 1. The channel implementation, following the pattern in `channel/mail/mailgun` (or any existing driver).
-2. Config struct with `redact:"true"` on secrets.
+2. Config struct that keeps secrets out of logs (redact via `middleware.Redact` when logging).
 3. A message type if the channel family doesn't already have one.
 4. Unit tests with `httptest.NewServer` covering: happy path, 4xx error, 5xx retryable error, timeout.
 5. A documentation page under `content/docs/channels/<family>/<provider>.mdx` in the docs repo.

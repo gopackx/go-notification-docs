@@ -17,20 +17,27 @@ type Customer struct {
     ID            int64
     Name, Email   string
     Phone         string // E.164
-    DeviceTokens  []string
+    DeviceToken   string
     WantsMail     bool
     WantsWhatsApp bool
 }
 
-func (c Customer) RouteNotificationFor(channel string) any {
+func (c Customer) GetID() string { return strconv.FormatInt(c.ID, 10) }
+
+func (c Customer) RouteNotificationFor(channel string) string {
     switch channel {
-    case "mail":     return c.Email
-    case "whatsapp": return c.Phone
-    case "sms":      return c.Phone
-    case "push":     return c.DeviceTokens
-    case "database": return c.ID
+    case "mail":
+        return c.Email
+    case "whatsapp":
+        return c.Phone
+    case "sms":
+        return c.Phone
+    case "push":
+        return c.DeviceToken
+    case "database":
+        return c.GetID()
     }
-    return nil
+    return ""
 }
 
 type Admin struct {
@@ -39,13 +46,18 @@ type Admin struct {
     Slack string // channel ID like "#ops"
 }
 
-func (a Admin) RouteNotificationFor(channel string) any {
+func (a Admin) GetID() string { return strconv.FormatInt(a.ID, 10) }
+
+func (a Admin) RouteNotificationFor(channel string) string {
     switch channel {
-    case "mail":     return a.Email
-    case "slack":    return a.Slack
-    case "database": return a.ID
+    case "mail":
+        return a.Email
+    case "chat":
+        return a.Slack
+    case "database":
+        return a.GetID()
     }
-    return nil
+    return ""
 }
 ```
 
@@ -65,10 +77,33 @@ func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
     return channels
 }
 
-func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message { /* ... */ }
-func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message { /* ... */ }
-func (n OrderShipped) ToPush(u notification.Notifiable) *push.Message { /* ... */ }
-func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any { /* ... */ }
+func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
+    return mail.NewMessage().
+        SetSubject("Your order shipped").
+        Line("Order " + n.OrderID + " is on its way.").
+        Action("Track package", n.TrackingURL)
+}
+
+func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
+    return whatsapp.NewMessage().
+        SetText("📦 Order *" + n.OrderID + "* shipped. Track: " + n.TrackingURL)
+}
+
+func (n OrderShipped) ToPush(u notification.Notifiable) *push.Message {
+    return push.NewMessage().
+        SetTitle("Order shipped").
+        SetBody("Order " + n.OrderID + " is on its way.").
+        SetData("order_id", n.OrderID)
+}
+
+func (n OrderShipped) ToDatabase(u notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("order.shipped").
+        SetTitle("Order shipped").
+        SetBody("Order " + n.OrderID + " is on its way.").
+        AddData("order_id", n.OrderID).
+        AddData("tracking_url", n.TrackingURL)
+}
 
 
 type LoginOTP struct {
@@ -79,13 +114,8 @@ func (n LoginOTP) Via(_ notification.Notifiable) []string {
     return []string{"sms"} // OTPs only via SMS for reliability
 }
 
-func (n LoginOTP) ToSms(_ notification.Notifiable) *sms.Message {
-    return sms.NewMessage().Text("Your code: " + n.Code + ". Valid 5 minutes.")
-}
-
-func (n LoginOTP) ShouldRetry(err error) bool {
-    // OTPs are useless after 60s — don't retry past then
-    return false // treat OTP as fire-and-forget; handle retry in caller if needed
+func (n LoginOTP) ToSMS(_ notification.Notifiable) *sms.Message {
+    return sms.NewMessage().SetText("Your code: " + n.Code + ". Valid 5 minutes.")
 }
 
 
@@ -95,93 +125,104 @@ type PaymentFailed struct {
 }
 
 func (n PaymentFailed) Via(_ notification.Notifiable) []string {
-    return []string{"slack", "database", "mail"}
+    return []string{"chat", "database", "mail"}
 }
 
-func (n PaymentFailed) ToSlack(_ notification.Notifiable) *slack.Message {
-    return slack.NewMessage().
-        Text(":warning: Payment failure").
-        Attachment(
-            slack.NewAttachment().
-                Color("danger").
-                Field("Order",  n.OrderID, true).
-                Field("Reason", n.Reason,  true),
-        )
+func (n PaymentFailed) ToChat(_ notification.Notifiable) *chat.Message {
+    return chat.NewMessage().
+        SetText(":warning: Payment failure").
+        AddSlackAttachment(chat.SlackAttachment{
+            Color: "danger",
+            Fields: []chat.SlackField{
+                {Title: "Order", Value: n.OrderID, Short: true},
+                {Title: "Reason", Value: n.Reason, Short: true},
+            },
+        })
 }
 
 func (n PaymentFailed) ToMail(_ notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("[ops] Payment failed: " + n.OrderID).
+        SetSubject("[ops] Payment failed: " + n.OrderID).
         Line("A payment failed and needs manual review.").
         Line("Reason: " + n.Reason)
 }
 
-func (n PaymentFailed) ToDatabase(_ notification.Notifiable) map[string]any {
-    return map[string]any{"type": "payment.failed", "order_id": n.OrderID}
+func (n PaymentFailed) ToDatabase(_ notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("payment.failed").
+        SetTitle("Payment failed").
+        SetBody("Order " + n.OrderID + " failed: " + n.Reason).
+        AddData("order_id", n.OrderID)
 }
 ```
 
 ## Boot
 
 ```go
-func NewNotifier() *notification.Notifier {
+func NewNotifier(db *sql.DB, env string) *notification.Notifier {
     n := notification.New(notification.Config{
-        WorkerCount: 8,
-        RateLimit:   200, // global ceiling
-        OnError: func(_ context.Context, err notification.Error) {
-            slog.Error("notify failed",
-                "channel", err.Channel,
-                "type",    err.NotificationType,
-                "err",     err.Err,
-            )
+        WorkerPool: 8,
+        MaxRetries: 3,
+        RetryDelay: time.Second,
+        OnError: func(_ context.Context, no notification.Notifiable, channel string, err error) {
+            slog.Error("notify failed", "channel", channel, "err", err)
         },
-        OnSent: func(_ context.Context, s notification.SentInfo) {
-            metrics.NotificationSent.WithLabelValues(s.Channel, s.NotificationType).Inc()
+        OnSuccess: func(_ context.Context, no notification.Notifiable, channel string) {
+            metrics.NotificationSent.WithLabelValues(channel).Inc()
         },
     })
 
     // Email — production via SendGrid, dev via Mailtrap
     if env == "production" {
-        n.RegisterChannel("mail", sendgrid.New(sendgrid.Config{
+        n.RegisterChannel(sendgrid.New(sendgrid.Config{
             APIKey: os.Getenv("SENDGRID_API_KEY"),
-            From:   "noreply@shop.example.com",
+            From:   mail.Address{Name: "Shop", Address: "noreply@shop.example.com"},
         }))
     } else {
-        n.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
-            Mode:    mailtrap.ModeSandbox,
-            APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
-            InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
-            From:    "dev@shop.example.com",
+        inboxID, _ := strconv.Atoi(os.Getenv("MAILTRAP_INBOX_ID"))
+        n.RegisterChannel(mailtrap.New(mailtrap.Config{
+            Sandbox:  true,
+            APIToken: os.Getenv("MAILTRAP_API_TOKEN"),
+            InboxID:  inboxID,
+            From:     mail.Address{Name: "Shop Dev", Address: "dev@shop.example.com"},
         }))
     }
 
-    // WhatsApp — Twilio for reliability
-    n.RegisterChannel("whatsapp", twiliowa.New(twiliowa.Config{
+    // WhatsApp — self-hosted via WAHA
+    n.RegisterChannel(waha.New(waha.Config{
+        BaseURL:   os.Getenv("WAHA_BASE_URL"),
+        APIKey:    os.Getenv("WAHA_API_KEY"),
+        SessionID: "default",
+    }))
+
+    // SMS — Twilio
+    n.RegisterChannel(twilio.New(twilio.Config{
         AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
         AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
-        From:       "whatsapp:+14155238886",
+        From:       "+14155238886",
     }))
 
-    // SMS — Twilio for global, Zenziva for Indonesia
-    n.RegisterChannel("sms", twiliosms.New(/* ... */))
+    // Push — FCM (constructor returns an error, so capture it)
+    pushDriver, err := fcm.New(fcm.Config{
+        ProjectID:          os.Getenv("FCM_PROJECT_ID"),
+        ServiceAccountJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
+    })
+    if err != nil {
+        panic(err)
+    }
+    n.RegisterChannel(pushDriver)
 
-    // Push — FCM
-    n.RegisterChannel("push", fcm.New(fcm.Config{
-        CredentialsJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
-    }))
-
-    // Ops Slack
-    n.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
-        URL: os.Getenv("OPS_SLACK_WEBHOOK"),
+    // Ops chat — Slack incoming webhook
+    n.RegisterChannel(slack.New(slack.Config{
+        WebhookURL: os.Getenv("OPS_SLACK_WEBHOOK"),
     }))
 
     // Database — in-app notifications
-    dbCh := database.New(database.Config{
-        DB:     db,
-        Driver: database.DriverPostgres,
-    })
-    _ = dbCh.AutoMigrate(context.Background())
-    n.RegisterChannel("database", dbCh)
+    if err := migrate.Up(context.Background(), db, database.DialectPostgreSQL, "notifications"); err != nil {
+        panic(err)
+    }
+    store := database.NewSQLStore(db, database.DialectPostgreSQL)
+    n.RegisterChannel(database.New(database.Config{Store: store}))
 
     return n
 }
@@ -225,7 +266,7 @@ Metrics worth tracking:
 - `notifications_retries_total{channel, type}` — a spike here predicts an upstream outage.
 - `notifications_duration_seconds{channel}` — per-channel latency.
 
-All four can be wired up from `OnSent`, `OnError`, and `OnRetry` callbacks.
+Successful deliveries and post-retry failures can be wired up from the `OnSuccess` and `OnError` callbacks on `notification.Config`.
 
 ## What you get
 
@@ -237,4 +278,4 @@ With ~200 lines of notification code, this app now has:
 - Retries + rate limits + secret redaction for free.
 - A dev/prod split where dev never hits real customers.
 
-And if tomorrow you want to add Telegram, it's three lines: register the channel, add `ToTelegram()` to the notifications, add `"telegram"` to `Via()`.
+And if tomorrow you want to add Telegram, it's three lines: register the Telegram driver, add a `ToChat()` method to the notifications (Slack, Telegram, Discord, and Teams all share `*chat.Message`), and add `"telegram"` to `Via()`.

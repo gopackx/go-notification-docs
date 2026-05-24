@@ -7,6 +7,7 @@ import {
 } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
 import { mdxComponents } from '../mdx-components';
+import { PageActions } from '../page-actions';
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -16,18 +17,19 @@ export default async function Page(props: {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const markdownUrl = `/api/md/${(params.slug ?? []).join('/')}`.replace(/\/$/, '');
 
   return (
     <DocsPage
       toc={page.data.toc}
       full={page.data.full}
-      tableOfContent={{ enabled: false }}
-      tableOfContentPopover={{ enabled: false }}
+      tableOfContent={{ style: 'clerk' }}
     >
       <DocsTitle>{page.data.title}</DocsTitle>
       {page.data.description ? (
-        <DocsDescription>{page.data.description}</DocsDescription>
+        <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
       ) : null}
+      <PageActions markdownUrl={markdownUrl} pageUrl={page.url} />
       <DocsBody>
         <MDX components={mdxComponents} />
       </DocsBody>

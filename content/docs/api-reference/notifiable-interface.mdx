@@ -1,6 +1,6 @@
 ---
 title: Notifiable Interface
-description: The contract your recipient types implement — how to be reached per channel.
+description: The contract your recipient types implement — how to be identified and reached per channel.
 ---
 
 A `Notifiable` is anything that can receive a notification — typically your `User` type, but nothing stops you from implementing it on `Team`, `Organization`, or any recipient concept in your domain.
@@ -9,78 +9,88 @@ A `Notifiable` is anything that can receive a notification — typically your `U
 
 ```go
 type Notifiable interface {
-    RouteNotificationFor(channel string) any
+    GetID() string
+    RouteNotificationFor(channel string) string
 }
 ```
 
-One method. Returns the address/ID/token for the given channel, or `nil` if this recipient can't receive on that channel.
+**Two** methods, both returning `string`:
+
+- `GetID()` — a stable identifier for this recipient. It's stored alongside persisted notifications (the database channel) so the same recipient can be looked up later.
+- `RouteNotificationFor(channel)` — the address/route for the given channel (an email, a phone number, a device token, a URL). Return an **empty string** to skip this channel for this recipient.
 
 ## Typical implementation
 
 ```go
 type User struct {
-    ID              int64
-    Email           string
-    Phone           string      // E.164
-    TelegramChatID  int64
-    SlackUserID     string
-    DeviceTokens    []string
+    ID             string
+    Email          string
+    Phone          string // E.164
+    TelegramChatID string
+    DeviceToken    string
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) GetID() string { return u.ID }
+
+func (u User) RouteNotificationFor(channel string) string {
     switch channel {
     case "mail":     return u.Email
     case "sms":      return u.Phone
     case "whatsapp": return u.Phone
-    case "telegram": return u.TelegramChatID
-    case "slack":    return u.SlackUserID
-    case "push":     return u.DeviceTokens // slice for multicast
-    case "database": return u.ID            // recipient key for the DB channel
+    case "chat":     return u.TelegramChatID // chat is the default name for chat drivers
+    case "push":     return u.DeviceToken
     }
-    return nil
+    return ""
 }
 ```
 
-## Return types per channel
+## Route value per channel
 
-| Channel       | Expected return type | Example                      |
-|---------------|----------------------|------------------------------|
-| `mail`        | `string`             | `"user@example.com"`          |
-| `sms`         | `string`             | `"+628123456789"`             |
-| `whatsapp`    | `string`             | `"+628123456789"` or E.164    |
-| `telegram`    | `int64`              | `123456789`                   |
-| `slack`       | `string`             | `"U01ABC"` or `"#channel"`    |
-| `discord`     | `string`             | channel ID (for bot mode)     |
-| `teams`       | `string`             | webhook URL (for URL mode)    |
-| `push`        | `[]string`           | FCM token list                |
-| `database`    | `any`                | user ID — stored as notifiable_id |
-| `webhook`     | not used             | webhook URL is in the channel config |
+The route string is interpreted by the receiving driver:
 
-## Returning `nil`
+| Channel name | Route string | Example |
+|--------------|--------------|---------|
+| `mail`       | email address | `"user@example.com"` |
+| `sms`        | phone (E.164) | `"+628123456789"` |
+| `whatsapp`   | phone (E.164) | `"+628123456789"` |
+| `chat`       | chat ID / channel / webhook URL (driver-dependent) | `"123456789"`, `"#ops"` |
+| `push`       | a single device token | `"fcm-token…"` |
+| `webhook`    | target URL | `"https://hooks…"` |
+| `database`   | not routed — uses `GetID()` | — |
 
-If the user can't receive on a channel, return `nil`. The driver skips that send and moves on.
+<Callout type="info">
+  The channel name passed to `RouteNotificationFor` is the driver's `Name()`,
+  not the provider. By default chat drivers report `"chat"`, mail drivers
+  `"mail"`, etc. If you register a driver under a custom name (via its
+  `ChannelName`/`Name` config field), route on that same string.
+</Callout>
+
+## Returning an empty string
+
+If the recipient can't receive on a channel, return `""`. The channel is skipped for that recipient and dispatch moves on.
 
 ```go
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "sms" && u.Phone == "" {
-        return nil // user hasn't added a phone number
+        return "" // user hasn't added a phone number
     }
     // ...
 }
 ```
 
-## Multiple destinations for one channel
+## Multiple destinations
 
-For channels like `push` (one user can have multiple devices), return a slice:
+Routing returns a single string. To send to **multiple device tokens** in one push, set them in the notification's `ToPush` method instead of relying on the route:
 
 ```go
-case "push":
-    return u.ActiveDeviceTokens // []string
+func (n OrderShipped) ToPush(notification.Notifiable) *push.Message {
+    return push.NewMessage().
+        SetTokens(token1, token2, token3). // FCM multicast
+        SetTitle("Shipped")
+}
 ```
 
-The driver fans out to each.
-
-For other channels like `mail` — you can't return `[]string`; if you need to send to multiple addresses on the same send, model that as multiple `Notifiables`:
+To send the same notification to **multiple recipients**, model each as its own `Notifiable` and use `SendMulti`:
 
 ```go
 admins := []notification.Notifiable{admin1, admin2, admin3}
@@ -93,46 +103,45 @@ notifier.SendMulti(ctx, admins, AlertFired{})
 
 ```go
 type SlackChannel struct {
-    Name    string // e.g. "#ops"
+    ID      string
     Webhook string
 }
 
-func (c SlackChannel) RouteNotificationFor(channel string) any {
-    if channel == "slack" {
-        return c.Name
+func (c SlackChannel) GetID() string { return c.ID }
+
+func (c SlackChannel) RouteNotificationFor(channel string) string {
+    if channel == "chat" {
+        return c.Webhook
     }
-    return nil
+    return ""
 }
 
-notifier.Send(ctx, SlackChannel{Name: "#ops"}, IncidentFired{})
+notifier.Send(ctx, SlackChannel{ID: "ops", Webhook: "https://hooks.slack.com/…"}, IncidentFired{})
 ```
 
-## NotifiableType / NotifiableID
+## NotifiableType (optional)
 
-For the database channel, the library stores a `notifiable_type` (Go type name by default) and `notifiable_id` (from `RouteNotificationFor("database")`). These are what you query against:
+For the database channel, each stored row records a `notifiable_type` and `notifiable_id` (`GetID()`). The type defaults to `"notifiables"`. Override it by implementing the optional `NotifiableType` interface:
 
 ```go
-items, _ := dbChannel.Query(ctx, database.Filter{
-    NotifiableType: "User", // the Go struct name
-    NotifiableID:   user.ID,
-})
+func (u User) GetNotifiableType() string { return "users" }
 ```
 
-To override the type string, implement an optional method:
-
-```go
-func (u User) NotifiableType() string { return "user" } // lowercase, snake_case, etc.
-```
+`notification.NotifiableTypeOf(n)` returns this value, falling back to `"notifiables"` when the method isn't implemented.
 
 ## Testing
 
 A fake notifiable is trivial:
 
 ```go
-type fakeUser struct{ email string }
-func (f fakeUser) RouteNotificationFor(channel string) any {
-    if channel == "mail" { return f.email }
-    return nil
+type fakeUser struct{ id, email string }
+
+func (f fakeUser) GetID() string { return f.id }
+func (f fakeUser) RouteNotificationFor(channel string) string {
+    if channel == "mail" {
+        return f.email
+    }
+    return ""
 }
 ```
 

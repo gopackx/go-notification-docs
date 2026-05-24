@@ -13,18 +13,18 @@ If you've used **Laravel Notifications**, you already know go-notification's mod
 | `$user->notify(new OrderShipped)`    | `notifier.Send(ctx, user, OrderShipped{})`   |
 | `via()` method                        | `Via()` method                                |
 | `toMail()`                            | `ToMail()`                                    |
-| `toArray()` (for database)            | `ToDatabase()`                                |
-| `toVonage()` (SMS)                    | `ToSms()`                                     |
-| `toSlack()`                           | `ToSlack()`                                   |
+| `toArray()` (for database)            | `ToDatabase()` → `*database.Message`          |
+| `toVonage()` (SMS)                    | `ToSMS()` (uppercase)                          |
+| `toSlack()` / Telegram / Discord      | `ToChat()` → `*chat.Message` (one chat channel)|
 | `config/mail.php` config array        | `mailgun.Config{}` struct                     |
-| `php artisan notifications:table`     | `notifier.AutoMigrate(ctx)`                   |
-| `$user->notifications`                | `dbChannel.Query(ctx, filter)`                |
-| `$user->unreadNotifications`          | `dbChannel.Unread(ctx, type, id)`             |
+| `php artisan notifications:table`     | `migrate.Up(ctx, db, dialect, "notifications")`|
+| `$user->notifications`                | `dbChannel.List(ctx, user, opts)`             |
+| `$user->unreadNotifications`          | `dbChannel.Unread(ctx, user, limit)`          |
 | `markAsRead()`                        | `dbChannel.MarkAsRead(ctx, id)`               |
-| `markAllAsRead()`                     | `dbChannel.MarkAllAsRead(ctx, type, id)`      |
-| `Notification::route(...)->notify()`  | `notifier.SendOnDemand(ctx, routes, n)`       |
-| `routeNotificationFor('mail')`        | `RouteNotificationFor("mail")`                |
-| `ShouldQueue` interface               | `Config.Async = true` (default on)            |
+| `markAllAsRead()`                     | `dbChannel.MarkAllAsRead(ctx, user)`          |
+| `Notification::route(...)->notify()`  | ad-hoc `Notifiable` + `notifier.Send(...)`    |
+| `routeNotificationFor('mail')`        | `RouteNotificationFor("mail")` (returns `string`)|
+| `ShouldQueue` interface               | `Config.Async` (`*bool`, default on)          |
 | `queueable` delay                      | not yet — use external scheduler (cron, Temporal) |
 | `Notifications::fake()` in tests      | register a test channel that captures calls  |
 | `shouldSend()` method                  | do the check inside `Via()` (return empty slice) |
@@ -70,13 +70,15 @@ func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
 
 func (n OrderShipped) ToMail(notifiable notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order shipped").
+        SetSubject("Your order shipped").
         Line("Your order is on its way.").
         Action("Track", "https://...")
 }
 
-func (n OrderShipped) ToDatabase(notifiable notification.Notifiable) map[string]any {
-    return map[string]any{"order_id": n.OrderID}
+func (n OrderShipped) ToDatabase(notifiable notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("order.shipped").
+        AddData("order_id", n.OrderID)
 }
 
 notifier.Send(ctx, user, OrderShipped{OrderID: orderID})
@@ -95,10 +97,8 @@ Laravel's container resolves drivers and dependencies for you. In Go, you regist
 In Laravel, the `Notifiable` trait adds `$user->notifications` as an Eloquent relation. In Go, you query the database channel explicitly:
 
 ```go
-items, _ := dbChannel.Query(ctx, database.Filter{
-    NotifiableType: "user",
-    NotifiableID:   user.ID,
-})
+ch := notifier.Channel("database").(*database.Channel)
+items, _ := ch.List(ctx, user, database.ListOptions{Limit: 20})
 ```
 
 More verbose; no ORM coupling.
@@ -131,7 +131,7 @@ Laravel lets you alias channels (`'mail'` → `SlackChannel::class`). go-notific
 
 - **Fluent mail builder** — Line/Action/Greeting/Salutation, same semantics.
 - **Per-channel routing** — `RouteNotificationFor(channel)` matches `routeNotificationFor($channel)`.
-- **On-demand notifications** — `Notification::route(...)` maps to `SendOnDemand(ctx, routes, n)`.
+- **On-demand notifications** — `Notification::route(...)` maps to passing an ad-hoc `Notifiable` to `Send` (see [On-Demand Notifications](/docs/features/on-demand-channels)).
 - **Multi-channel dispatch** — one `Send` hits all channels from `Via()` in parallel.
 - **Database table structure** — same columns (id, type, notifiable_type, notifiable_id, data, read_at, created_at).
 

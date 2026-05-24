@@ -3,183 +3,197 @@ title: Message Types
 description: Per-channel message struct reference. All builder methods and fields.
 ---
 
-Every channel has a message struct you build via `NewMessage()` inside a `To<Channel>()` method. This page is the field reference for each.
+Every channel has a `Message` struct you build with `NewMessage()` inside a `To<Channel>()` method. Builders use `Set*`/`Add*` verbs and return the message for chaining. This is the field reference for each.
 
 ## `mail.Message`
 
 ```go
-type Message struct {
-    // ...internal
+import "github.com/gopackx/go-notification/channel/mail"
+
+func (m *Message) SetFrom(addr string, name ...string) *Message
+func (m *Message) AddTo(addr string, name ...string) *Message
+func (m *Message) AddCC(addr string, name ...string) *Message
+func (m *Message) AddBCC(addr string, name ...string) *Message
+func (m *Message) AddReplyTo(addr string, name ...string) *Message
+
+func (m *Message) SetSubject(s string) *Message
+func (m *Message) SetText(s string) *Message
+func (m *Message) SetHTML(s string) *Message
+func (m *Message) SetPriority(p Priority) *Message
+
+func (m *Message) AddHeader(k, v string) *Message
+func (m *Message) AddTag(tags ...string) *Message
+func (m *Message) SetMetadata(k, v string) *Message
+func (m *Message) Attach(a Attachment) *Message
+
+// Laravel-style body (auto-rendered to Text/HTML when those are empty):
+func (m *Message) SetGreeting(s string) *Message
+func (m *Message) Line(s string) *Message
+func (m *Message) Action(label, url string) *Message
+func (m *Message) SetSalutation(s string) *Message
+```
+
+Supporting types:
+
+```go
+type Address struct {
+    Name    string
+    Address string
 }
 
-// Builders
-func (m *Message) Subject(s string) *Message
-func (m *Message) From(addr, name string) *Message         // optional override
-func (m *Message) ReplyTo(addr string) *Message
-func (m *Message) Cc(addrs ...string) *Message
-func (m *Message) Bcc(addrs ...string) *Message
+type Attachment struct {
+    Filename    string
+    ContentType string
+    Data        []byte
+    Inline      bool   // attach as related part (e.g. CID images)
+    ContentID   string
+}
 
-func (m *Message) Greeting(s string) *Message
-func (m *Message) Line(s string) *Message                  // body paragraph
-func (m *Message) Action(label, url string) *Message       // button
-func (m *Message) Salutation(s string) *Message            // signature line
-
-func (m *Message) Template(name string, data any) *Message
-func (m *Message) TextTemplate(name string, data any) *Message
-
-func (m *Message) Attach(name string, body []byte, mime string) *Message
-func (m *Message) Header(key, value string) *Message
+type Priority string
+const (
+    PriorityNormal Priority = ""
+    PriorityHigh   Priority = "high"
+    PriorityLow    Priority = "low"
+)
 ```
+
+<Callout type="info">
+  Driver `Config.From` is a `mail.Address`. The per-message `SetFrom` is an
+  optional override. If a message sets no recipient, the channel falls back to
+  `RouteNotificationFor("mail")`.
+</Callout>
 
 ## `whatsapp.Message`
 
 ```go
-func (m *Message) Text(s string) *Message
-func (m *Message) Image(url string) *Message
-func (m *Message) Video(url string) *Message
-func (m *Message) Document(url, filename string) *Message
-func (m *Message) Audio(url string) *Message
-func (m *Message) Caption(s string) *Message
+import "github.com/gopackx/go-notification/channel/whatsapp"
 
-// Official-API only (Twilio, Meta Cloud)
-func (m *Message) Template(name string, vars []string) *Message
-func (m *Message) Buttons(btns ...Button) *Message
+func (m *Message) SetTo(to string) *Message
+func (m *Message) SetText(t string) *Message
+func (m *Message) SetImage(url, caption string) *Message
+func (m *Message) SetVideo(url, caption string) *Message
+func (m *Message) SetDocument(url, filename string) *Message
+
+// Meta-approved business templates (Twilio, Meta Cloud API):
+func (m *Message) SetTemplate(name, lang string, params ...string) *Message
 ```
 
 ## `sms.Message`
 
 ```go
-func (m *Message) Text(s string) *Message
-func (m *Message) From(sender string) *Message // override per-message
+import "github.com/gopackx/go-notification/channel/sms"
+
+func (m *Message) SetTo(to string) *Message   // E.164
+func (m *Message) SetText(t string) *Message
+func (m *Message) SetFrom(f string) *Message  // override driver default sender
 ```
 
 ## `push.Message`
 
 ```go
-func (m *Message) Title(s string) *Message
-func (m *Message) Body(s string) *Message
-func (m *Message) Badge(n int) *Message
-func (m *Message) Sound(name string) *Message
-func (m *Message) Data(key string, value any) *Message
-func (m *Message) ImageURL(url string) *Message
+import "github.com/gopackx/go-notification/channel/push"
 
-func (m *Message) Android(cfg AndroidConfig) *Message
-func (m *Message) IOS(cfg IOSConfig) *Message
-func (m *Message) Web(cfg WebConfig) *Message
+func (m *Message) SetToken(t string) *Message
+func (m *Message) SetTokens(t ...string) *Message // FCM multicast
+func (m *Message) SetTopic(t string) *Message     // topic delivery
+func (m *Message) SetTitle(t string) *Message
+func (m *Message) SetBody(b string) *Message
+func (m *Message) SetImage(u string) *Message
+func (m *Message) SetSound(s string) *Message
+func (m *Message) SetBadge(b int) *Message
+func (m *Message) SetData(k, v string) *Message    // string→string only
+func (m *Message) SetClickAction(a string) *Message
 ```
 
+`Token`, `Tokens`, and `Topic` are mutually exclusive ways to target. `Data` values are strings.
+
+## `chat.Message`
+
+Slack, Telegram, Discord, and Microsoft Teams all use this one type — there is no per-provider message struct. Set the common `Text`, then add provider-specific extras as needed.
+
 ```go
-type AndroidConfig struct {
-    Priority     string // "normal" | "high"
-    Channel      string
-    CollapseKey  string
-    TTL          time.Duration
+import "github.com/gopackx/go-notification/channel/chat"
+
+func (m *Message) SetText(t string) *Message
+func (m *Message) SetTo(to string) *Message
+func (m *Message) SetParseMode(p string) *Message
+func (m *Message) AddSlackAttachment(a SlackAttachment) *Message
+func (m *Message) AddDiscordEmbed(e DiscordEmbed) *Message
+```
+
+Provider-specific fields on the struct:
+
+```go
+type Message struct {
+    To        string
+    Text      string
+    ParseMode string
+
+    // Slack
+    SlackAttachments []SlackAttachment
+    SlackBlocks      []map[string]any
+    SlackThreadTS    string
+
+    // Telegram
+    TelegramReplyToMessageID  int
+    TelegramDisableWebPreview bool
+
+    // Discord
+    DiscordUsername string
+    DiscordEmbeds   []DiscordEmbed
+
+    // Teams (MessageCard schema)
+    TeamsCard map[string]any
 }
 
-type IOSConfig struct {
-    Sound            string
-    Badge            int
-    ContentAvailable bool
-    MutableContent   bool
-    InterruptionLevel string // "passive" | "active" | "time-sensitive" | "critical"
+type SlackAttachment struct {
+    Color, Title, TitleLink, Text, Footer string
+    Fields    []SlackField
+    Timestamp int64
 }
+type SlackField struct{ Title, Value string; Short bool }
 
-type WebConfig struct {
-    Icon         string
-    FCMOptions   map[string]string
+type DiscordEmbed struct {
+    Title, Description, URL string
+    Color  int
+    Fields []DiscordField
 }
-```
-
-## `slack.Message`
-
-```go
-func (m *Message) Text(s string) *Message
-func (m *Message) Channel(c string) *Message       // override per-message
-func (m *Message) Username(u string) *Message      // override display name
-func (m *Message) IconEmoji(e string) *Message     // ":bell:"
-func (m *Message) ThreadTS(ts string) *Message     // post in a thread
-func (m *Message) Attachment(a *Attachment) *Message
-func (m *Message) Block(b any) *Message            // Slack Block Kit
-```
-
-```go
-type Attachment struct { /* builder */ }
-
-func NewAttachment() *Attachment
-func (a *Attachment) Color(c string) *Attachment      // "good" | "warning" | "danger" | "#hex"
-func (a *Attachment) Pretext(s string) *Attachment
-func (a *Attachment) Title(s, link string) *Attachment
-func (a *Attachment) Text(s string) *Attachment
-func (a *Attachment) Field(title, value string, short bool) *Attachment
-func (a *Attachment) Action(label, url string) *Attachment
-```
-
-## `telegram.Message`
-
-```go
-func (m *Message) Text(s string) *Message
-func (m *Message) ParseMode(mode string) *Message // "Markdown" | "MarkdownV2" | "HTML"
-func (m *Message) DisableWebPagePreview(b bool) *Message
-func (m *Message) DisableNotification(b bool) *Message
-func (m *Message) InlineKeyboard(rows ...[]telegram.Button) *Message
-```
-
-## `discord.Message`
-
-```go
-func (m *Message) Content(s string) *Message
-func (m *Message) Username(u string) *Message
-func (m *Message) AvatarURL(url string) *Message
-func (m *Message) TTS(b bool) *Message
-func (m *Message) Embed(e *Embed) *Message   // up to 10
-```
-
-```go
-type Embed struct { /* builder */ }
-
-func NewEmbed() *Embed
-func (e *Embed) Title(s string) *Embed
-func (e *Embed) URL(u string) *Embed
-func (e *Embed) Description(s string) *Embed
-func (e *Embed) Color(c int) *Embed
-func (e *Embed) Field(name, value string, inline bool) *Embed
-func (e *Embed) Footer(text, iconURL string) *Embed
-func (e *Embed) Image(url string) *Embed
-func (e *Embed) Thumbnail(url string) *Embed
-func (e *Embed) Timestamp(t time.Time) *Embed
-func (e *Embed) Author(name, url, iconURL string) *Embed
-```
-
-## `teams.Message`
-
-```go
-func (m *Message) Title(s string) *Message
-func (m *Message) Text(s string) *Message
-func (m *Message) Color(hex string) *Message
-func (m *Message) Fact(name, value string) *Message
-func (m *Message) Action(label, url string) *Message
-func (m *Message) Card(card AdaptiveCard) *Message // for custom Adaptive Cards
+type DiscordField struct{ Name, Value string; Inline bool }
 ```
 
 ## `webhook.Message`
 
 ```go
-func (m *Message) Event(name string) *Message
-func (m *Message) Payload(data any) *Message
-func (m *Message) Header(key, value string) *Message
+import "github.com/gopackx/go-notification/channel/webhook"
+
+func (m *Message) SetURL(u string) *Message
+func (m *Message) SetMethod(v string) *Message     // default "POST"
+func (m *Message) AddHeader(k, v string) *Message
+func (m *Message) SetJSON(v any) *Message          // BodyType "json" (default)
+func (m *Message) SetForm(v map[string]string) *Message // BodyType "form"
+func (m *Message) SetRaw(b []byte) *Message        // BodyType "raw"
 ```
 
-## Database — no builder
-
-The database channel takes a plain `map[string]any` from `ToDatabase()`:
+## `database.Message`
 
 ```go
-func (n OrderShipped) ToDatabase(u notification.Notifiable) map[string]any {
-    return map[string]any{
-        "type":    "order.shipped",
-        "order_id": n.OrderID,
-    }
+import "github.com/gopackx/go-notification/channel/database"
+
+func (m *Message) SetType(t string) *Message       // e.g. "order.shipped"
+func (m *Message) SetTitle(t string) *Message
+func (m *Message) SetBody(b string) *Message
+func (m *Message) AddData(k string, v any) *Message
+func (m *Message) SetData(data map[string]any) *Message
+```
+
+```go
+func (n OrderShipped) ToDatabase(u notification.Notifiable) *database.Message {
+    return database.NewMessage().
+        SetType("order.shipped").
+        SetTitle("Order shipped").
+        SetBody("Your order is on its way.").
+        AddData("order_id", n.OrderID)
 }
 ```
 
-Keys are free-form. `type` is treated specially — it populates the `type` column of the notifications table. Everything else goes into the `data` JSONB/JSON/TEXT column.
+`ToDatabase` returns a `*database.Message`, not a `map`. Rows you read back are `database.StoredNotification` values (`ID`, `Type`, `Title`, `Body`, `Data`, `ReadAt`, `CreatedAt`, …). See [Database Channel](/docs/channels/database).

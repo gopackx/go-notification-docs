@@ -32,7 +32,7 @@ This is the longest setup of any driver in this library. In rough order:
 ```go
 import "github.com/gopackx/go-notification/channel/whatsapp/meta"
 
-notifier.RegisterChannel("whatsapp", meta.New(meta.Config{
+notifier.RegisterChannel(meta.New(meta.Config{
     AccessToken:   os.Getenv("WHATSAPP_META_TOKEN"),
     PhoneNumberID: "1234567890",
     APIVersion:    "v20.0",

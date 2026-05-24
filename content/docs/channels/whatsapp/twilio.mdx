@@ -29,7 +29,7 @@ description: Official WhatsApp Business API via Twilio as a BSP. Zero ban risk, 
 ```go
 import "github.com/gopackx/go-notification/channel/whatsapp/twilio"
 
-notifier.RegisterChannel("whatsapp", twilio.New(twilio.Config{
+notifier.RegisterChannel(twilio.New(twilio.Config{
     AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
     AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
     From:       "whatsapp:+14155238886", // sandbox or your approved sender
@@ -52,8 +52,8 @@ WhatsApp requires pre-approved templates for business-initiated conversations (m
 ```go
 func (n OTP) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
     return whatsapp.NewMessage().
-        Template("otp_verification", []string{n.Code}). // SID or name, plus variables
-        Text("Your code: " + n.Code)                      // fallback text
+        SetTemplate("otp_verification", "en_US", n.Code). // name, language, variables
+        SetText("Your code: " + n.Code)                   // fallback text
 }
 ```
 

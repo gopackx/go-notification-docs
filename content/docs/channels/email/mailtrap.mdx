@@ -23,13 +23,16 @@ Exact tiers: https://mailtrap.io/pricing.
 2. Copy the **API credentials**: `Inbox ID` and `API Token`.
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/mailtrap"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/mailtrap"
+)
 
-notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
-    Mode:    mailtrap.ModeSandbox,
-    APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
-    InboxID: "1234567",
-    From:    "noreply@example.com",
+notifier.RegisterChannel(mailtrap.New(mailtrap.Config{
+    Sandbox:  true,
+    APIToken: os.Getenv("MAILTRAP_API_TOKEN"),
+    InboxID:  1234567,
+    From:     mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 
@@ -39,10 +42,10 @@ notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
 2. Create an API key.
 
 ```go
-notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
-    Mode:   mailtrap.ModeProduction,
-    APIKey: os.Getenv("MAILTRAP_API_TOKEN"),
-    From:   "noreply@example.com",
+notifier.RegisterChannel(mailtrap.New(mailtrap.Config{
+    Sandbox:  false,
+    APIToken: os.Getenv("MAILTRAP_API_TOKEN"),
+    From:     mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 
@@ -50,27 +53,25 @@ notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
 
 | Field       | Type     | Required | Description                                                      |
 |-------------|----------|----------|------------------------------------------------------------------|
-| `Mode`      | `Mode`   | yes      | `ModeSandbox` or `ModeProduction`.                               |
-| `APIKey`    | `string` | yes      | Mailtrap API token.                                              |
-| `InboxID`   | `string` | sandbox  | Required in sandbox mode. Ignored in production.                 |
-| `From`      | `string` | yes      | Sender address. In sandbox, anything works; in prod, must be verified. |
-| `FromName`  | `string` | no       | Display name.                                                    |
+| `Sandbox`   | `bool`   | no       | `true` for the sandbox inbox, `false` for production sending.    |
+| `APIToken`  | `string` | yes      | Mailtrap API token.                                              |
+| `InboxID`   | `int`    | sandbox  | Required in sandbox mode. Ignored in production.                 |
+| `From`      | `mail.Address` | yes | Sender. In sandbox anything works; in prod must be verified.    |
 | `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
 
 ## Dev → staging → prod pattern
 
 ```go
-mode := mailtrap.ModeSandbox
-if os.Getenv("APP_ENV") == "production" {
-    mode = mailtrap.ModeProduction
-}
+sandbox := os.Getenv("APP_ENV") != "production"
 
-notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
-    Mode:   mode,
-    APIKey: os.Getenv("MAILTRAP_API_TOKEN"),
+inboxID, _ := strconv.Atoi(os.Getenv("MAILTRAP_INBOX_ID"))
+
+notifier.RegisterChannel(mailtrap.New(mailtrap.Config{
+    Sandbox:  sandbox,
+    APIToken: os.Getenv("MAILTRAP_API_TOKEN"),
     // InboxID only used in sandbox mode
-    InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
-    From:    "noreply@example.com",
+    InboxID: inboxID,
+    From:    mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 

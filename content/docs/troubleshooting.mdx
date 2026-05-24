@@ -8,12 +8,12 @@ Symptom-first list of things that commonly break and what to check.
 ## Nothing happens when I call `Send()`
 
 - **In async mode**, `Send()` returns immediately. Errors surface via `OnError`. Make sure you registered a handler.
-- **Program exits before sends complete** — add `notifier.Close(ctx)` before exit, especially in short-lived programs.
-- **Channel not registered** — if your `Via()` returns `"mail"` but you never called `RegisterChannel("mail", ...)`, you'll see an error in `OnError` saying "channel not registered".
+- **Program exits before sends complete** — add `notifier.Close()` before exit, especially in short-lived programs. It drains the worker pool and returns no error.
+- **Channel not registered** — if your `Via()` returns `"mail"` but you never registered a driver whose `Name()` is `"mail"` via `RegisterChannel(...)`, you'll see an error in `OnError` saying "channel not registered".
 
 ## `OnError` reports "channel not registered"
 
-Exact name mismatch. The string in `RegisterChannel(...)` must match the string returned by `Via()`. Case-sensitive.
+Exact name mismatch. The name returned by the registered driver's `Name()` must match the string returned by `Via()`. Case-sensitive.
 
 ## Emails silently not delivered (but no errors)
 
@@ -32,12 +32,12 @@ Otherwise, check:
 
 ## `429 Too Many Requests` from a provider
 
-Your send rate exceeds the provider's limit. Lower `RateLimit` on the channel. If it's an intermittent spike (e.g., digest fan-out), increase `RateLimitBurst` to smooth it.
+Your send rate exceeds the provider's limit. Lower the rate via `notifier.SetRateLimit(channel, rate, interval, burst)`. If it's an intermittent spike (e.g., digest fan-out), raise the `burst` argument to smooth it.
 
 ## Database channel rows missing
 
-- **AutoMigrate not called** — the table may not exist. Check logs for migration errors.
-- **Wrong driver type** — e.g., using `DriverPostgres` config with a MySQL connection will generate invalid SQL.
+- **Migrations not run** — the table may not exist. Run `migrate.Up(ctx, db, dialect, "notifications")` at startup and check logs for migration errors.
+- **Wrong dialect** — e.g., using `database.DialectPostgreSQL` with a MySQL connection will generate invalid SQL.
 - **Transaction rollback** — if you `Send()` inside a transaction that then rolls back, the async dispatcher has already inserted (or will). Move `Send()` after commit.
 
 ## Slack webhook returns 200 but no message appears
@@ -62,18 +62,18 @@ Carrier-side drop. Happens most in:
 
 Use a proper short code or register a carrier-approved sender ID if SMS is mission-critical.
 
-## `Close(ctx)` returns context deadline exceeded
+## `Close()` blocks for a long time
 
-Workers didn't finish in time. Either:
-- Increase the deadline.
-- Investigate which channel is slow (add per-channel duration logging via `OnSent`).
+Workers didn't finish draining. `Close()` waits for in-flight sends to complete. Either:
+- Make sure the contexts passed to `Send()` have sensible deadlines so slow sends don't hang the drain.
+- Investigate which channel is slow (add per-channel duration logging via `OnSuccess`).
 - Reduce `QueueSize` to make backlogs smaller by pushing back on the caller earlier.
 
 ## High memory usage
 
 - **Queue too large** — reduce `QueueSize`.
 - **Attachment payloads in memory** — mail attachments are currently held fully in memory until send. For large files, consider hosting elsewhere and sending a link.
-- **Too many worker goroutines** — `WorkerCount` defaults to `NumCPU`. Reduce if your sends are mostly I/O-bound and the CPUs are overkill (they usually are).
+- **Too many worker goroutines** — `WorkerPool` defaults to `10`. Tune it for your workload; sends are mostly I/O-bound, so a larger pool is usually fine, but a huge pool plus a large queue raises memory.
 
 ## Build errors after upgrading
 

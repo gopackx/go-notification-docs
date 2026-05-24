@@ -26,7 +26,7 @@ Wablas uses the unofficial WhatsApp Web protocol. Against WhatsApp's Terms of Se
 ```go
 import "github.com/gopackx/go-notification/channel/whatsapp/wablas"
 
-notifier.RegisterChannel("whatsapp", wablas.New(wablas.Config{
+notifier.RegisterChannel(wablas.New(wablas.Config{
     Token:   os.Getenv("WABLAS_TOKEN"),
     BaseURL: "https://api.wablas.com",
 }))

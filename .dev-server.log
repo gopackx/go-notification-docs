@@ -1,0 +1,500 @@
+$ next dev
+[MDX] updated map file in 18.06549999999993ms
+[MDX] started dev server
+ ⚠ Port 3000 is in use by process 24764, using available port 3001 instead.
+   ▲ Next.js 15.5.15
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.7.2:3001
+
+ ✓ Starting...
+ ✓ Ready in 3.6s
+ ○ Compiling /api/md/[[...slug]] ...
+ ✓ Compiled /api/md/[[...slug]] in 2.5s (372 modules)
+ GET /api/md/getting-started/installation 200 in 5612ms
+ ○ Compiling /llms.txt ...
+ ✓ Compiled /llms.txt in 517ms (374 modules)
+ GET /llms.txt 200 in 1389ms
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 2.8s (1263 modules)
+ GET /docs/getting-started/installation 200 in 6575ms
+[MDX] updated map file in 35.77819999982603ms
+[MDX] updated map file in 27.249599999981ms
+[MDX] updated map file in 24.34459999995306ms
+[MDX] updated map file in 56.80019999993965ms
+ ✓ Compiled in 3.9s (426 modules)
+[MDX] updated map file in 20.54989999998361ms
+ ✓ Compiled in 677ms (426 modules)
+[MDX] updated map file in 29.851999999955297ms
+ ✓ Compiled in 519ms (426 modules)
+[MDX] updated map file in 20.765400000149384ms
+ ✓ Compiled in 486ms (426 modules)
+[MDX] updated map file in 68.51979999989271ms
+ ✓ Compiled in 530ms (426 modules)
+[MDX] updated map file in 21.664799999911338ms
+[MDX] updated map file in 32.797200000146404ms
+[MDX] updated map file in 33.49139999994077ms
+ ✓ Compiled in 468ms (426 modules)
+ ✓ Compiled in 398ms (426 modules)
+[MDX] updated map file in 43.44439999992028ms
+[MDX] updated map file in 55.957899999804795ms
+[MDX] updated map file in 51.12689999979921ms
+[MDX] updated map file in 13.211099999956787ms
+ ✓ Compiled in 426ms (426 modules)
+ ✓ Compiled in 313ms (426 modules)
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 3.3s (840 modules)
+ GET /docs/getting-started/installation 200 in 5409ms
+ GET /docs/getting-started/quick-start 200 in 1762ms
+ GET /docs/api-reference/core 200 in 7535ms
+ GET /docs/api-reference/notifiable-interface 200 in 3928ms
+ GET /docs/api-reference/notification-interface 200 in 3484ms
+ GET /docs/api-reference/channel-interface 200 in 5855ms
+ GET /docs/api-reference/message-types 200 in 30721ms
+[MDX] updated map file in 27.34929999988526ms
+ ✓ Compiled in 1533ms (426 modules)
+[MDX] updated map file in 27.16150000016205ms
+[MDX] updated map file in 51.47570000006817ms
+[MDX] updated map file in 19.83020000020042ms
+[MDX] updated map file in 18.468000000109896ms
+ ✓ Compiled in 601ms (426 modules)
+ ✓ Compiled in 496ms (426 modules)
+[MDX] updated map file in 20.93819999997504ms
+ ✓ Compiled in 383ms (426 modules)
+[MDX] updated map file in 21.086200000019744ms
+ ✓ Compiled in 410ms (426 modules)
+[MDX] updated map file in 9.149900000076741ms
+ ✓ Compiled in 377ms (426 modules)
+[MDX] updated map file in 14.104100000113249ms
+ ✓ Compiled in 616ms (426 modules)
+[MDX] updated map file in 13.923900000052527ms
+[MDX] updated map file in 8.23050000006333ms
+[MDX] updated map file in 17.126600000075996ms
+[MDX] updated map file in 16.170600000070408ms
+[MDX] updated map file in 70.81389999995008ms
+ ✓ Compiled in 1439ms (426 modules)
+ ✓ Compiled in 679ms (426 modules)
+[MDX] updated map file in 12.912299999967217ms
+ ✓ Compiled in 329ms (426 modules)
+[MDX] updated map file in 8.501700000138953ms
+[MDX] updated map file in 6.994200000073761ms
+[MDX] updated map file in 23.496299999998882ms
+[MDX] updated map file in 8.362300000153482ms
+ ✓ Compiled in 352ms (426 modules)
+ ✓ Compiled in 364ms (426 modules)
+[MDX] updated map file in 10.6581999999471ms
+ ✓ Compiled in 281ms (426 modules)
+[MDX] updated map file in 6.898200000170618ms
+[MDX] updated map file in 7.716000000014901ms
+ ✓ Compiled in 324ms (426 modules)
+ ✓ Compiled in 237ms (426 modules)
+[MDX] updated map file in 12.15969999996014ms
+ ✓ Compiled in 307ms (426 modules)
+[MDX] updated map file in 8.473900000099093ms
+[MDX] updated map file in 8.883600000059232ms
+[MDX] updated map file in 12.790299999993294ms
+ ✓ Compiled in 614ms (426 modules)
+ ✓ Compiled in 344ms (426 modules)
+[MDX] updated map file in 14.765599999809638ms
+ ✓ Compiled in 332ms (426 modules)
+[MDX] updated map file in 20.68390000006184ms
+ ✓ Compiled in 341ms (426 modules)
+[MDX] updated map file in 10.275700000114739ms
+ ✓ Compiled in 287ms (426 modules)
+[MDX] updated map file in 18.53209999995306ms
+[MDX] updated map file in 22.988000000128523ms
+[MDX] updated map file in 11.457799999974668ms
+ ✓ Compiled in 271ms (426 modules)
+ ✓ Compiled in 208ms (426 modules)
+[MDX] updated map file in 14.15030000009574ms
+ ✓ Compiled in 290ms (426 modules)
+[MDX] updated map file in 22.367499999934807ms
+[MDX] updated map file in 16.61890000011772ms
+[MDX] updated map file in 7.172999999951571ms
+ ✓ Compiled in 295ms (426 modules)
+ ✓ Compiled in 282ms (426 modules)
+[MDX] updated map file in 10.004799999995157ms
+ ✓ Compiled in 261ms (426 modules)
+[MDX] updated map file in 19.060199999948964ms
+[MDX] updated map file in 16.317400000058115ms
+[MDX] updated map file in 23.537400000030175ms
+ ✓ Compiled in 312ms (426 modules)
+[MDX] updated map file in 12.694399999920279ms
+ ✓ Compiled in 273ms (426 modules)
+ ✓ Compiled in 249ms (426 modules)
+[MDX] updated map file in 27.343799999915063ms
+[MDX] updated map file in 12.552699999883771ms
+[MDX] updated map file in 6.741199999814853ms
+ ✓ Compiled in 319ms (426 modules)
+ ✓ Compiled in 287ms (426 modules)
+[MDX] updated map file in 16.22039999999106ms
+[MDX] updated map file in 31.572400000179186ms
+[MDX] updated map file in 29.82980000018142ms
+[MDX] updated map file in 24.90570000000298ms
+ ✓ Compiled in 684ms (426 modules)
+[MDX] updated map file in 6.415900000138208ms
+ ✓ Compiled in 295ms (426 modules)
+[MDX] updated map file in 10.540999999968335ms
+ ✓ Compiled in 328ms (426 modules)
+[MDX] updated map file in 12.647300000069663ms
+ ✓ Compiled in 277ms (426 modules)
+[MDX] updated map file in 8.795399999944493ms
+ ✓ Compiled in 316ms (426 modules)
+[MDX] updated map file in 7.090499999932945ms
+[MDX] updated map file in 9.16039999993518ms
+[MDX] updated map file in 6.458800000138581ms
+ ✓ Compiled in 355ms (426 modules)
+ ✓ Compiled in 317ms (426 modules)
+[MDX] updated map file in 7.347700000042096ms
+ ✓ Compiled in 258ms (426 modules)
+[MDX] updated map file in 11.06319999997504ms
+[MDX] updated map file in 8.273100000107661ms
+[MDX] updated map file in 20.92590000014752ms
+[MDX] updated map file in 17.678699999814853ms
+[MDX] updated map file in 7.431299999821931ms
+ ✓ Compiled in 489ms (426 modules)
+[MDX] updated map file in 10.242000000085682ms
+ ✓ Compiled in 1644ms (426 modules)
+ ✓ Compiled in 307ms (426 modules)
+[MDX] updated map file in 8.65749999997206ms
+[MDX] updated map file in 9.67920000012964ms
+[MDX] updated map file in 8.688799999887124ms
+[MDX] updated map file in 7.917399999918416ms
+[MDX] updated map file in 6.3497999999672174ms
+ ✓ Compiled in 500ms (426 modules)
+ ✓ Compiled in 833ms (426 modules)
+[MDX] updated map file in 8.367599999997765ms
+[MDX] updated map file in 8.083499999949709ms
+ ✓ Compiled in 318ms (426 modules)
+ ✓ Compiled in 323ms (426 modules)
+[MDX] updated map file in 20.552999999839813ms
+[MDX] updated map file in 17.403700000140816ms
+[MDX] updated map file in 4.938100000144914ms
+ ✓ Compiled in 271ms (426 modules)
+ ✓ Compiled in 246ms (426 modules)
+[MDX] updated map file in 7.491099999984726ms
+ ✓ Compiled in 239ms (426 modules)
+[MDX] updated map file in 10.118400000035763ms
+ ✓ Compiled in 327ms (426 modules)
+[MDX] updated map file in 9.280099999858066ms
+ ✓ Compiled in 325ms (426 modules)
+[MDX] updated map file in 14.533800000092015ms
+ ✓ Compiled in 538ms (426 modules)
+[MDX] updated map file in 9.5918000000529ms
+[MDX] updated map file in 8.247599999886006ms
+[MDX] updated map file in 14.86309999995865ms
+[MDX] updated map file in 18.322800000198185ms
+ ✓ Compiled in 627ms (426 modules)
+[MDX] updated map file in 18.105299999937415ms
+ ✓ Compiled in 289ms (426 modules)
+[MDX] updated map file in 13.482800000114366ms
+ ✓ Compiled in 281ms (426 modules)
+[MDX] updated map file in 18.51080000004731ms
+[MDX] updated map file in 15.780500000109896ms
+[MDX] updated map file in 11.347800000105053ms
+ ✓ Compiled in 312ms (426 modules)
+ ✓ Compiled in 321ms (426 modules)
+[MDX] updated map file in 9.172399999806657ms
+[MDX] updated map file in 41.7890999999363ms
+[MDX] updated map file in 10.795600000070408ms
+[MDX] updated map file in 23.090899999951944ms
+[MDX] updated map file in 7.089500000001863ms
+ ✓ Compiled in 486ms (426 modules)
+ ✓ Compiled in 322ms (426 modules)
+[MDX] updated map file in 14.748499999986961ms
+[MDX] updated map file in 10.544699999969453ms
+[MDX] updated map file in 13.879399999976158ms
+[MDX] updated map file in 10.6875ms
+ ✓ Compiled in 972ms (426 modules)
+ ✓ Compiled in 387ms (426 modules)
+[MDX] updated map file in 6.777000000001863ms
+ ✓ Compiled in 284ms (426 modules)
+[MDX] updated map file in 8.709400000050664ms
+ ✓ Compiled in 514ms (426 modules)
+[MDX] updated map file in 7.656200000084937ms
+ ✓ Compiled in 496ms (426 modules)
+[MDX] updated map file in 21.272899999981746ms
+[MDX] updated map file in 13.428699999814853ms
+[MDX] updated map file in 5.798999999882653ms
+ ✓ Compiled in 302ms (426 modules)
+ ✓ Compiled in 266ms (426 modules)
+[MDX] updated map file in 9.306899999966845ms
+ ✓ Compiled in 268ms (426 modules)
+[MDX] updated map file in 12.624000000068918ms
+[MDX] updated map file in 20.797199999913573ms
+[MDX] updated map file in 15.168799999868497ms
+[MDX] updated map file in 11.51410000002943ms
+[MDX] updated map file in 6.936699999962002ms
+[MDX] updated map file in 17.129100000020117ms
+[MDX] updated map file in 9.326400000136346ms
+ ✓ Compiled in 460ms (426 modules)
+[MDX] updated map file in 21.278700000140816ms
+ ✓ Compiled in 403ms (426 modules)
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 2.5s (840 modules)
+ GET /docs/channels/overview 200 in 5479ms
+ GET /docs/channels/email/overview 200 in 1112ms
+ GET /docs/channels/email/smtp 200 in 1087ms
+ GET /docs/channels/email/mailgun 200 in 950ms
+ GET /docs/channels/email/sendgrid 200 in 853ms
+ GET /docs/channels/email/ses 200 in 775ms
+ GET /docs/channels/email/resend 200 in 660ms
+ GET /docs/channels/email/postmark 200 in 769ms
+ GET /docs/channels/email/mailtrap 200 in 1367ms
+ GET /docs/channels/sms/overview 200 in 487ms
+ GET /docs/channels/sms/twilio 200 in 1113ms
+ GET /docs/channels/sms/vonage 200 in 1839ms
+ GET /docs/channels/sms/sns 200 in 830ms
+ GET /docs/channels/sms/zenziva 200 in 746ms
+ GET /docs/channels/whatsapp/overview 200 in 539ms
+ GET /docs/channels/whatsapp/meta-cloud-api 200 in 864ms
+ GET /docs/channels/whatsapp/twilio 200 in 1865ms
+ GET /docs/channels/whatsapp/waha 200 in 1320ms
+ GET /docs/channels/whatsapp/wablas 200 in 786ms
+ GET /docs/channels/whatsapp/fonnte 200 in 732ms
+ GET /docs/channels/push 200 in 7089ms
+ GET /docs/channels/webhook 200 in 2612ms
+ GET /docs/channels/database 200 in 4856ms
+ GET /docs/channels/chat/overview 200 in 822ms
+ GET /docs/channels/chat/slack 200 in 2644ms
+ ⚠ Server is approaching the used memory threshold, restarting...
+   ▲ Next.js 15.5.15
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.7.2:3001
+
+ ✓ Starting...
+ ✓ Ready in 3.5s
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 11.5s (1251 modules)
+ GET /docs/channels/chat/discord 200 in 16305ms
+ GET /docs/channels/chat/telegram 200 in 1109ms
+ GET /docs/channels/chat/teams 200 in 1718ms
+[MDX] updated map file in 37.25410000002012ms
+[MDX] updated map file in 31.284599999897182ms
+[MDX] updated map file in 9.48879999993369ms
+ ✓ Compiled in 3.3s (425 modules)
+[MDX] updated map file in 25.06499999994412ms
+ ✓ Compiled in 662ms (425 modules)
+[MDX] updated map file in 22.703599999891594ms
+[MDX] updated map file in 18.754799999995157ms
+[MDX] updated map file in 37.54950000019744ms
+ ✓ Compiled in 537ms (425 modules)
+ ✓ Compiled in 373ms (425 modules)
+[MDX] updated map file in 115.75ms
+[MDX] updated map file in 65.34339999989606ms
+[MDX] updated map file in 14.14809999987483ms
+ ✓ Compiled in 682ms (425 modules)
+ ✓ Compiled in 609ms (425 modules)
+[MDX] updated map file in 12.817000000039116ms
+ ✓ Compiled in 366ms (425 modules)
+[MDX] updated map file in 27.3792999999132ms
+ ✓ Compiled in 505ms (425 modules)
+[MDX] updated map file in 22.940899999812245ms
+[MDX] updated map file in 23.07150000007823ms
+[MDX] updated map file in 31.97690000012517ms
+[MDX] updated map file in 90.42879999987781ms
+ ✓ Compiled in 569ms (425 modules)
+ ✓ Compiled in 339ms (425 modules)
+[MDX] updated map file in 10.253400000045076ms
+ ✓ Compiled in 548ms (425 modules)
+[MDX] updated map file in 27.492499999934807ms
+[MDX] updated map file in 26.76119999983348ms
+[MDX] updated map file in 19.150399999925867ms
+[MDX] updated map file in 6.65030000009574ms
+ ✓ Compiled in 432ms (425 modules)
+ ✓ Compiled in 316ms (425 modules)
+[MDX] updated map file in 8.337999999988824ms
+ ✓ Compiled in 457ms (425 modules)
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 1625ms (840 modules)
+ GET /docs/features/async 200 in 4572ms
+ GET /docs/features/broadcast 200 in 1224ms
+ GET /docs/features/message-builders 200 in 5316ms
+ GET /docs/features/on-demand-channels 200 in 2402ms
+ GET /docs/features/rate-limiting 200 in 1256ms
+ GET /docs/features/retry 200 in 992ms
+ GET /docs/features/security 200 in 711ms
+ GET /docs/features/templates 200 in 2971ms
+[MDX] updated map file in 12.072999999858439ms
+[MDX] updated map file in 11.020499999867752ms
+[MDX] updated map file in 7.620400000130758ms
+ ✓ Compiled in 1473ms (1265 modules)
+[MDX] updated map file in 13.771500000031665ms
+ ✓ Compiled in 861ms (1265 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: EPERM: operation not permitted, rename 'D:\programming\typescript\next-js\go-notification-docs\.next\cache\webpack\server-development\2.pack.gz_' -> 'D:\programming\typescript\next-js\go-notification-docs\.next\cache\webpack\server-development\2.pack.gz'
+[MDX] updated map file in 13.156999999890104ms
+[MDX] updated map file in 25.468300000065938ms
+[MDX] updated map file in 22.113600000040606ms
+[MDX] updated map file in 8.405800000065938ms
+ ✓ Compiled in 905ms (425 modules)
+[MDX] updated map file in 9.740699999965727ms
+[MDX] updated map file in 8.51699999999255ms
+[MDX] updated map file in 6.074599999934435ms
+ ✓ Compiled in 363ms (425 modules)
+ ✓ Compiled in 306ms (425 modules)
+[MDX] updated map file in 21.198900000192225ms
+[MDX] updated map file in 16.0484000002034ms
+[MDX] updated map file in 20.512399999890476ms
+[MDX] updated map file in 5.188399999868125ms
+ ✓ Compiled in 364ms (425 modules)
+ ✓ Compiled in 360ms (425 modules)
+[MDX] updated map file in 9.505700000096112ms
+[MDX] updated map file in 15.896100000012666ms
+[MDX] updated map file in 26.41649999981746ms
+[MDX] updated map file in 27.126199999824166ms
+ ✓ Compiled in 627ms (425 modules)
+ ✓ Compiled in 479ms (425 modules)
+[MDX] updated map file in 15.015700000338256ms
+ ✓ Compiled in 320ms (425 modules)
+[MDX] updated map file in 11.320299999788404ms
+ ✓ Compiled in 305ms (425 modules)
+[MDX] updated map file in 11.629999999888241ms
+ ✓ Compiled in 298ms (425 modules)
+[MDX] updated map file in 37.81000000005588ms
+[MDX] updated map file in 44.58130000019446ms
+[MDX] updated map file in 12.982000000309199ms
+[MDX] updated map file in 16.60300000011921ms
+ ✓ Compiled in 531ms (425 modules)
+ ✓ Compiled in 272ms (425 modules)
+[MDX] updated map file in 13.274500000290573ms
+ ✓ Compiled in 347ms (425 modules)
+[MDX] updated map file in 18.76340000005439ms
+[MDX] updated map file in 15.318200000096112ms
+[MDX] updated map file in 10.821599999908358ms
+[MDX] updated map file in 82.38959999987856ms
+ ✓ Compiled in 688ms (425 modules)
+ ✓ Compiled in 435ms (425 modules)
+[MDX] updated map file in 6.042400000151247ms
+ ✓ Compiled in 297ms (425 modules)
+[MDX] updated map file in 14.36960000032559ms
+ ✓ Compiled in 316ms (425 modules)
+[MDX] updated map file in 15.750800000037998ms
+ ✓ Compiled in 415ms (425 modules)
+[MDX] updated map file in 9.894599999766797ms
+ ✓ Compiled in 344ms (425 modules)
+[MDX] updated map file in 8.144599999766797ms
+ ✓ Compiled in 340ms (425 modules)
+[MDX] updated map file in 13.92450000019744ms
+ ✓ Compiled in 378ms (425 modules)
+[MDX] updated map file in 10.140300000086427ms
+ ✓ Compiled in 299ms (425 modules)
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 1770ms (840 modules)
+[MDX] updated map file in 10.615299999713898ms
+[MDX] updated map file in 16.42519999993965ms
+[MDX] updated map file in 16.289499999955297ms
+[MDX] updated map file in 8.062400000169873ms
+[MDX] updated map file in 13.757900000084192ms
+[MDX] updated map file in 5.699500000104308ms
+[MDX] updated map file in 13.469800000078976ms
+[MDX] updated map file in 16.108200000133365ms
+[MDX] updated map file in 12.083200000226498ms
+[MDX] updated map file in 11.3277000002563ms
+[MDX] updated map file in 16.708699999842793ms
+[MDX] updated map file in 12.740999999921769ms
+[MDX] updated map file in 20.879399999976158ms
+[MDX] updated map file in 14.246100000105798ms
+[MDX] updated map file in 10.096600000280887ms
+ GET /docs/guides/custom-channel 200 in 23760ms
+ ✓ Compiled in 1477ms (1265 modules)
+[MDX] updated map file in 9.848600000143051ms
+[MDX] updated map file in 12.9468999998644ms
+[MDX] updated map file in 9.03289999999106ms
+[MDX] updated map file in 12.757000000216067ms
+ ⨯ Failed to generate static paths for /docs/[[...slug]]:
+TypeError: __webpack_modules__[moduleId] is not a function
+    at __webpack_exec__ (D:\programming\typescript\next-js\go-notification-docs\.next\server\app\docs\[[...slug]]\page.js:1079:39)
+    at <unknown> (D:\programming\typescript\next-js\go-notification-docs\.next\server\app\docs\[[...slug]]\page.js:1080:2309) {
+  type: 'TypeError'
+}
+ GET /docs/guides/laravel-comparison 200 in 8693ms
+ ✓ Compiled in 1472ms (1265 modules)
+[MDX] updated map file in 16.732499999925494ms
+[MDX] updated map file in 16.676600000355393ms
+[MDX] updated map file in 5.71100000012666ms
+ ✓ Compiled in 1448ms (1265 modules)
+[MDX] updated map file in 14.045100000221282ms
+ ✓ Compiled in 1499ms (1265 modules)
+[MDX] updated map file in 16.011100000236183ms
+[MDX] updated map file in 18.053400000091642ms
+[MDX] updated map file in 16.82740000030026ms
+ ✓ Compiled in 1366ms (1265 modules)
+[MDX] updated map file in 17.65309999976307ms
+ ✓ Compiled in 1233ms (1265 modules)
+[MDX] updated map file in 13.773200000170618ms
+ ✓ Compiled in 1154ms (1265 modules)
+[MDX] updated map file in 8.29190000006929ms
+[MDX] updated map file in 8.489999999757856ms
+[MDX] updated map file in 12.009599999990314ms
+[MDX] updated map file in 31.35050000017509ms
+ ✓ Compiled in 1579ms (1265 modules)
+[MDX] updated map file in 10.27350000012666ms
+ ✓ Compiled in 1117ms (1265 modules)
+[MDX] updated map file in 34.61450000014156ms
+[MDX] updated map file in 31.333899999968708ms
+[MDX] updated map file in 8.714999999850988ms
+ ✓ Compiled in 1439ms (1265 modules)
+[MDX] updated map file in 12.137899999972433ms
+[MDX] updated map file in 11.702900000382215ms
+ ✓ Compiled in 2.4s (1265 modules)
+[MDX] updated map file in 7.310099999886006ms
+ ✓ Compiled in 1197ms (1265 modules)
+[MDX] updated map file in 10.40140000032261ms
+ ✓ Compiled in 554ms (425 modules)
+[MDX] updated map file in 16.56099999975413ms
+[MDX] updated map file in 12.497400000225753ms
+[MDX] updated map file in 8.361099999863654ms
+ ✓ Compiled in 337ms (425 modules)
+ ✓ Compiled in 289ms (425 modules)
+[MDX] updated map file in 19.6535000000149ms
+[MDX] updated map file in 16.590199999976903ms
+[MDX] updated map file in 30.168100000359118ms
+[MDX] updated map file in 7.996700000017881ms
+ ✓ Compiled in 388ms (425 modules)
+ ✓ Compiled in 307ms (425 modules)
+[MDX] updated map file in 6.906099999789149ms
+ ✓ Compiled in 320ms (425 modules)
+[MDX] updated map file in 16.33229999989271ms
+ ✓ Compiled in 326ms (425 modules)
+[MDX] updated map file in 8.223499999847263ms
+[MDX] updated map file in 26.28830000013113ms
+[MDX] updated map file in 22.662000000011176ms
+ ✓ Compiled in 533ms (425 modules)
+[MDX] updated map file in 31.03429999994114ms
+ ✓ Compiled in 657ms (425 modules)
+[MDX] updated map file in 28.288200000301003ms
+ ✓ Compiled in 427ms (425 modules)
+[MDX] updated map file in 8.101199999917299ms
+ ✓ Compiled in 327ms (425 modules)
+[MDX] updated map file in 11.085400000214577ms
+ ✓ Compiled in 299ms (425 modules)
+[MDX] updated map file in 8.969800000078976ms
+ ✓ Compiled in 303ms (425 modules)
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 3.5s (840 modules)
+ GET /docs/index 200 in 9234ms
+ GET /docs/faq 200 in 2673ms
+ GET /docs/troubleshooting 200 in 1927ms
+ GET /docs/contributing 200 in 1206ms
+ GET /docs/changelog 200 in 539ms
+ GET /docs/guides/production-tips 200 in 6144ms
+ GET /docs/guides/smtp-cloud-issues 200 in 1032ms
+ GET /docs/guides/choosing-email-driver 200 in 1116ms
+ GET /docs/guides/choosing-whatsapp-driver 200 in 1042ms
+ GET /docs/examples/basic 200 in 3543ms
+ GET /docs/examples/email-api 200 in 6472ms
+ GET /docs/examples/full-example 200 in 41928ms
+ ⚠ Server is approaching the used memory threshold, restarting...
+   ▲ Next.js 15.5.15
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.7.2:3001
+
+ ✓ Starting...
+ ✓ Ready in 3.8s
+ ○ Compiling /docs/[[...slug]] ...
+ ✓ Compiled /docs/[[...slug]] in 13.9s (1251 modules)
+ ✓ Compiled in 978ms (411 modules)
+ GET /docs/examples/in-app-notifications 200 in 30162ms
+ GET /docs/examples/multi-channel 200 in 6350ms
+ GET /docs/examples/whatsapp-waha 200 in 3342ms
+ ✓ Compiled in 895ms (840 modules)
+ ✓ Compiled in 79ms

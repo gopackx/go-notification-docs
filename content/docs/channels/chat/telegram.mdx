@@ -15,29 +15,32 @@ Telegram's Bot API is officially supported, free, and has no rate limits that ma
 ```go
 import "github.com/gopackx/go-notification/channel/chat/telegram"
 
-notifier.RegisterChannel("telegram", telegram.New(telegram.Config{
-    Token: os.Getenv("TELEGRAM_BOT_TOKEN"),
+notifier.RegisterChannel(telegram.New(telegram.Config{
+    Name:     "telegram",
+    BotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 }))
 ```
 
 ## Sending
 
 ```go
+import "github.com/gopackx/go-notification/channel/chat"
+
 func (n OrderShipped) Via(u notification.Notifiable) []string {
     return []string{"telegram"}
 }
 
-func (n OrderShipped) ToTelegram(u notification.Notifiable) *telegram.Message {
-    return telegram.NewMessage().
-        Text("*Your order shipped*\nOrder: " + n.OrderID).
-        ParseMode("Markdown")
+func (n OrderShipped) ToChat(u notification.Notifiable) *chat.Message {
+    return chat.NewMessage().
+        SetText("*Your order shipped*\nOrder: " + n.OrderID).
+        SetParseMode("Markdown")
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "telegram" {
-        return u.TelegramChatID // e.g. 123456789
+        return u.TelegramChatID // e.g. "123456789"
     }
-    return nil
+    return ""
 }
 ```
 
@@ -48,19 +51,21 @@ func (u User) RouteNotificationFor(channel string) any {
 
 ## Configuration reference
 
-| Field     | Type     | Required | Description                                                     |
-|-----------|----------|----------|-----------------------------------------------------------------|
-| `Token`   | `string` | yes      | Bot token from BotFather.                                        |
-| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                          |
+| Field           | Type     | Required | Description                                                   |
+|-----------------|----------|----------|---------------------------------------------------------------|
+| `BotToken`      | `string` | yes      | Bot token from BotFather.                                     |
+| `DefaultChatID` | `string` | no       | Fallback chat ID if `RouteNotificationFor` returns empty.     |
+| `Name`          | `string` | no       | Channel name used by `Via()`. Defaults to `"chat"`.           |
+| `Timeout`       | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                        |
 
 ## Message options
 
-The builder supports:
+The `chat.Message` builder supports:
 
-- `Text(string)` — message body.
-- `ParseMode("Markdown" | "MarkdownV2" | "HTML")` — rich formatting.
-- `DisableWebPagePreview(true)` — don't expand the first URL into a card.
-- `InlineKeyboard(...)` — buttons with URLs or callback data.
+- `SetText(string)` — message body.
+- `SetParseMode("Markdown" | "MarkdownV2" | "HTML")` — rich formatting.
+- `TelegramDisableWebPreview` (bool field) — don't expand the first URL into a card.
+- `TelegramReplyToMessageID` (int64 field) — reply to a specific message.
 
 ## Troubleshooting
 

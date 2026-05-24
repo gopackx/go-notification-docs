@@ -15,9 +15,9 @@ Every `notifier.Send()` call returns immediately. Actual channel dispatch runs o
 
 ```go
 notifier := notification.New(notification.Config{
-    Async:      true,  // default
-    WorkerCount: 4,    // default: runtime.NumCPU()
-    QueueSize:  1000,  // default: 1000
+    // Async defaults to true; leave it nil to keep async on.
+    WorkerPool: 10,   // default: 10
+    QueueSize:  100,  // default: WorkerPool * 10
 })
 ```
 
@@ -25,40 +25,47 @@ On `Send()`, each `(channel, notification, notifiable)` triple is pushed onto an
 
 ## Configuration
 
-| Field         | Type   | Default             | Description                                                       |
-|---------------|--------|---------------------|-------------------------------------------------------------------|
-| `Async`       | `bool` | `true`              | Run dispatch on a worker pool. `false` = synchronous.              |
-| `WorkerCount` | `int`  | `runtime.NumCPU()`  | Number of dispatcher goroutines.                                   |
-| `QueueSize`   | `int`  | `1000`              | Max buffered notifications. Full queue causes `Send()` to block.   |
+| Field        | Type    | Default          | Description                                                       |
+|--------------|---------|------------------|-------------------------------------------------------------------|
+| `Async`      | `*bool` | `true`           | Run dispatch on a worker pool. Set `false` for synchronous.        |
+| `WorkerPool` | `int`   | `10`             | Number of dispatcher goroutines (max concurrent in-flight sends).  |
+| `QueueSize`  | `int`   | `WorkerPool * 10`| Max buffered notifications. A full queue causes `Send()` to block. |
+
+<Callout type="info">
+  `Async` is a `*bool`, so its zero value (`nil`) is treated as `true`. To turn
+  async **off**, set it explicitly with the helper: `Async: notification.BoolPtr(false)`.
+</Callout>
 
 ## Synchronous mode
 
-For CLI tools, cron jobs, or tests where you want blocking behavior and errors returned to the caller:
+For CLI tools, cron jobs, or tests where you want blocking behavior and errors returned to the caller, disable async globally:
 
 ```go
 notifier := notification.New(notification.Config{
-    Async: false,
+    Async: notification.BoolPtr(false),
 })
 err := notifier.Send(ctx, user, OrderShipped{}) // blocks until all channels finish
 ```
 
-In sync mode, the returned error is the first channel failure encountered (others are logged but not returned).
+In sync mode the returned error is the **joined** set of channel failures (`errors.Join`), each wrapped with its channel name. You can also force a single call to block without changing the global setting by passing `notification.Sync()`:
+
+```go
+err := notifier.Send(ctx, user, OTPCode{Code: "123456"}, notification.Sync())
+```
 
 ## Closing cleanly
 
-When the program is exiting, call `Close(ctx)` to drain the queue:
+When the program is exiting, call `Close()` to drain the queue:
 
 ```go
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-notifier.Close(ctx)
+defer notifier.Close()
 ```
 
-`Close` waits for in-flight sends to finish. If the context expires first, it returns a deadline-exceeded error and remaining sends are dropped.
+`Close()` takes no arguments and returns nothing. It closes the queue and **waits** for all in-flight sends to finish before returning. It's idempotent, and any `Send` after `Close` returns `ErrClosed`.
 
 ## What if the queue fills up?
 
-If `QueueSize` is reached and `Send()` tries to enqueue more, it **blocks** until space is free. For truly burst-heavy workloads, increase `QueueSize` or spill to a real queue (Redis, NATS, SQS) in front of go-notification.
+If `QueueSize` is reached and `Send()` tries to enqueue more, it **blocks** until a worker frees a slot — natural backpressure. For truly burst-heavy workloads, increase `WorkerPool`/`QueueSize` or spill to a real queue (Redis, NATS, SQS) in front of go-notification.
 
 ## Error handling
 
@@ -66,14 +73,16 @@ Errors from async sends aren't returned to the `Send()` caller (it already retur
 
 ```go
 notification.New(notification.Config{
-    OnError: func(ctx context.Context, err notification.Error) {
-        log.Error("send failed",
-            "channel", err.Channel,
-            "type",    err.NotificationType,
-            "err",     err.Err,
+    OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+        slog.Error("send failed",
+            "channel", channel,
+            "id",      n.GetID(),
+            "err",     err,
         )
     },
 })
 ```
+
+`OnError` fires after all retries for a channel are exhausted. There's a matching `OnSuccess(ctx, n, channel)` for delivery confirmations.
 
 See also: [Retry & Backoff](/docs/features/retry), [Rate Limiting](/docs/features/rate-limiting).

@@ -21,22 +21,21 @@ description: Indonesian SMS gateway. Local pricing, custom alphanumeric sender, 
 ```go
 import "github.com/gopackx/go-notification/channel/sms/zenziva"
 
-notifier.RegisterChannel("sms", zenziva.New(zenziva.Config{
-    UserKey: os.Getenv("ZENZIVA_USERKEY"),
-    PassKey: os.Getenv("ZENZIVA_PASSKEY"),
+notifier.RegisterChannel(zenziva.New(zenziva.Config{
+    Userkey:   os.Getenv("ZENZIVA_USERKEY"),
+    Passkey:   os.Getenv("ZENZIVA_PASSKEY"),
+    Subdomain: os.Getenv("ZENZIVA_SUBDOMAIN"),
 }))
 ```
 
 ## Configuration reference
 
-| Field     | Type     | Required | Description                                                          |
-|-----------|----------|----------|----------------------------------------------------------------------|
-| `UserKey` | `string` | yes      | Account userkey.                                                      |
-| `PassKey` | `string` | yes      | Account passkey / API token.                                          |
-| `Mode`    | `string` | no       | `"regular"` (default) or `"masking"` for custom sender name.           |
-| `Masking` | `string` | no       | Custom sender name when `Mode == "masking"` (e.g. `"YourBrand"`).     |
-| `BaseURL` | `string` | no       | Override API base. Zenziva has multiple endpoints.                    |
-| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                               |
+| Field       | Type     | Required | Description                                                          |
+|-------------|----------|----------|----------------------------------------------------------------------|
+| `Userkey`   | `string` | yes      | Account userkey.                                                      |
+| `Passkey`   | `string` | yes      | Account passkey / API token.                                          |
+| `Subdomain` | `string` | yes      | Your Zenziva account subdomain (the API endpoint host).               |
+| `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                               |
 
 ## Number format
 

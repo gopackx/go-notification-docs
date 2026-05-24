@@ -18,13 +18,16 @@ description: Send email via Amazon Simple Email Service. Cheapest at scale if yo
 3. Create an IAM user with the `ses:SendEmail` permission and generate an access key pair.
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/ses"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/ses"
+)
 
-notifier.RegisterChannel("mail", ses.New(ses.Config{
+notifier.RegisterChannel(ses.New(ses.Config{
     Region:          "us-east-1",
     AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-    From:            "noreply@example.com",
+    From:            mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 
@@ -35,7 +38,7 @@ notifier.RegisterChannel("mail", ses.New(ses.Config{
 | `Region`           | `string` | yes      | AWS region that matches your verified identity.               |
 | `AccessKeyID`      | `string` | yes      | IAM access key ID. Use an IAM user scoped to SES-only.        |
 | `SecretAccessKey`  | `string` | yes      | IAM secret access key. Store in env or secrets manager.       |
-| `From`             | `string` | yes      | A verified sender identity (domain or email).                 |
+| `From`             | `mail.Address` | yes | A verified sender identity (domain or email).                 |
 | `ConfigurationSet` | `string` | no       | Optional — for event publishing to CloudWatch / Firehose.      |
 | `Timeout`          | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
 

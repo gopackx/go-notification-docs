@@ -23,11 +23,11 @@ description: SMS via Amazon SNS. Cheapest option if you're already on AWS.
 ```go
 import "github.com/gopackx/go-notification/channel/sms/sns"
 
-notifier.RegisterChannel("sms", sns.New(sns.Config{
+notifier.RegisterChannel(sns.New(sns.Config{
     Region:          "us-east-1",
     AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-    MessageType:     "Transactional",
+    SMSType:         "Transactional",
     SenderID:        "YourBrand", // where supported
 }))
 ```
@@ -39,7 +39,7 @@ notifier.RegisterChannel("sms", sns.New(sns.Config{
 | `Region`          | `string` | yes      | AWS region. `us-east-1` has the widest SMS coverage.             |
 | `AccessKeyID`     | `string` | yes      | IAM access key ID.                                               |
 | `SecretAccessKey` | `string` | yes      | IAM secret access key.                                           |
-| `MessageType`     | `string` | no       | `"Transactional"` (default) or `"Promotional"`.                  |
+| `SMSType`         | `string` | no       | `"Promotional"` (default) or `"Transactional"`.                  |
 | `SenderID`        | `string` | no       | Alphanumeric sender ID (not supported in all countries).          |
 | `Timeout`         | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
 

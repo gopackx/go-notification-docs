@@ -5,61 +5,35 @@ description: API keys stay out of logs. Drivers use raw HTTP with no third-party
 
 go-notification is built around two security defaults:
 
-1. **Auto-redaction** of secrets in logs and error messages.
+1. **No secrets logged** — the library never logs your API keys, and ships a helper to scrub secrets from anything you log yourself.
 2. **Zero third-party SDKs** — every driver uses `net/http` directly.
 
-## Auto-redaction
+## Redaction helper
 
-API keys, tokens, and secrets are redacted from:
-
-- Error messages returned to `OnError`.
-- Log output from drivers.
-- `String()` methods on config types.
-
-For example, attempting to log a Mailgun config:
+Redaction is a regex-based string scrubber in the `middleware` package — not a struct-tag or `String()` mechanism. It replaces bearer tokens, `api_key=…`, `password=…`, and `token=…` patterns with `***`:
 
 ```go
-cfg := mailgun.Config{
-    Domain: "mg.example.com",
-    APIKey: "key-abcdef1234567890",
-}
-fmt.Println(cfg.String())
-// Domain=mg.example.com APIKey=key-*****7890
+import "github.com/gopackx/go-notification/middleware"
+
+safe := middleware.Redact(`Authorization: Bearer abc123 api_key=key-secret`)
+// "Authorization: Bearer *** api_key=***"
 ```
 
-Fields marked as secrets internally (API keys, tokens, passwords) never appear in full, even via `%+v` formatting or JSON marshaling.
-
-## What's redacted by default
-
-- Mailgun `APIKey`
-- SendGrid `APIKey`
-- AWS `SecretAccessKey`
-- Postmark `ServerToken`
-- Resend `APIKey`
-- Mailtrap `APIKey`
-- SMTP `Password`
-- Twilio `AuthToken`
-- WAHA `APIKey`
-- Fonnte `Token`, Wablas `Token`
-- FCM service account JSON (the whole thing)
-- Slack bot tokens, incoming webhook URLs (the token portion)
-- Telegram bot tokens
-- Discord webhook URLs (the token portion)
-- Teams webhook URLs
-- Webhook `Secret`
-
-## Redacting your own fields
-
-If you define your own `Config` struct or custom channel, use the `redact` struct tag:
+For structured logging, `RedactAttr` returns a redacted `slog.Attr`:
 
 ```go
-type MyConfig struct {
-    Endpoint string
-    APIKey   string `redact:"true"`
-}
+slog.Info("calling provider", middleware.RedactAttr("url", requestURL))
 ```
 
-The library's redacting logger (and any code that invokes `notification.Redact(cfg)`) will respect the tag.
+<Callout type="warn">
+  There is **no** `redact:"true"` struct tag, no `notification.Redact(cfg)`, and
+  no redacting `String()` on config types. Don't log whole config structs with
+  `%+v` — pass individual values through `middleware.Redact` instead.
+</Callout>
+
+## Keeping secrets out of logs
+
+The notifier's own logging never prints credentials. When you log around the library — request URLs, headers, error strings that may embed a key — run the value through `middleware.Redact`/`RedactAttr` first. That covers the common leak vectors (bearer tokens, `api_key`/`token`/`password` pairs).
 
 ## Zero SDK dependencies
 
@@ -84,18 +58,7 @@ Recommended:
 
 ## TLS
 
-Every driver enforces HTTPS with the system's default CA bundle. Override via `http.Client` if you need a custom CA or mutual TLS:
-
-```go
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
-    // ...
-    HTTPClient: &http.Client{
-        Transport: &http.Transport{
-            TLSClientConfig: &tls.Config{RootCAs: customPool},
-        },
-    },
-}))
-```
+Every HTTP driver talks HTTPS using Go's default transport and the system CA bundle; each builds its own client from the `Timeout` you configure. There is no `HTTPClient` config field to inject a custom CA or mutual-TLS client. If you need a custom CA or client certificates, the supported path is a network-level egress proxy or a custom channel ([Writing a Custom Channel](/docs/guides/custom-channel)) where you control the `http.Client`.
 
 ## Reporting a vulnerability
 

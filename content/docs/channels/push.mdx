@@ -18,12 +18,26 @@ Mobile push is handled by **Firebase Cloud Messaging (FCM)**. One driver, all th
 5. Generate a **service account JSON** (Project Settings → Service accounts → Generate new private key).
 
 ```go
-import "github.com/gopackx/go-notification/channel/push/fcm"
+import (
+    "github.com/gopackx/go-notification/channel/push"
+    "github.com/gopackx/go-notification/channel/push/fcm"
+)
 
-notifier.RegisterChannel("push", fcm.New(fcm.Config{
-    CredentialsJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
-}))
+driver, err := fcm.New(fcm.Config{
+    ProjectID:          "my-firebase-project",
+    ServiceAccountJSON: []byte(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
+})
+if err != nil {
+    panic(err)
+}
+notifier.RegisterChannel(driver)
 ```
+
+<Callout type="warn">
+  FCM is the **only** driver whose `New` returns `(*Driver, error)` — it parses
+  the service-account key up front. Capture and check the error; you can't inline
+  it into `RegisterChannel`.
+</Callout>
 
 Storing the full JSON in an env var is fine for smaller setups; for anything serious, fetch it from a secrets manager at startup.
 
@@ -36,51 +50,52 @@ func (n ChatMessage) Via(u notification.Notifiable) []string {
 
 func (n ChatMessage) ToPush(u notification.Notifiable) *push.Message {
     return push.NewMessage().
-        Title(n.From).
-        Body(n.Preview).
-        Data("conversation_id", n.ConversationID).
-        Badge(1).
-        Sound("default")
+        SetTitle(n.From).
+        SetBody(n.Preview).
+        SetData("conversation_id", n.ConversationID). // string values only
+        SetBadge(1).
+        SetSound("default")
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "push" {
-        return u.DeviceTokens // []string — all registered FCM tokens for this user
+        return u.DeviceToken // the user's current FCM token
     }
-    return nil
+    return ""
 }
 ```
 
-If `RouteNotificationFor` returns a slice, the driver fans out to all tokens in one call (FCM multicast).
+`RouteNotificationFor` returns a single token. To target several devices in one call, set them in `ToPush` with `SetTokens(...)` (FCM multicast); use `SetTopic(...)` for topic delivery.
+
+```go
+return push.NewMessage().SetTokens(t1, t2, t3).SetTitle("Shipped")
+```
 
 ## Configuration reference
 
-| Field             | Type     | Required | Description                                                      |
-|-------------------|----------|----------|------------------------------------------------------------------|
-| `CredentialsJSON` | `[]byte` | yes      | Contents of a Firebase service account JSON file.                 |
-| `ProjectID`       | `string` | no       | Override project ID (inferred from JSON by default).              |
-| `Timeout`         | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
+| Field                | Type     | Required | Description                                          |
+|----------------------|----------|----------|------------------------------------------------------|
+| `ProjectID`          | `string` | yes      | GCP project ID that owns the FCM app.                |
+| `ServiceAccountJSON` | `[]byte` | yes      | Raw bytes of the GCP service-account key file.       |
+| `Timeout`            | `time.Duration` | no | HTTP timeout per send. Default: `30s`.            |
+| `Name`               | `string` | no       | Override the channel name. Default: `"push"`.        |
 
-## Platform-specific fields
+## Message fields
 
-The message builder exposes platform overrides:
+The `push.Message` builder is platform-agnostic — FCM maps these to each platform:
 
 ```go
 push.NewMessage().
-    Title("Alert").
-    Body("Your order shipped").
-    Android(push.AndroidConfig{
-        Priority: "high",
-        Channel:  "orders",
-    }).
-    IOS(push.IOSConfig{
-        Sound: "ping.caf",
-        Badge: 1,
-    }).
-    Web(push.WebConfig{
-        Icon: "https://example.com/icon.png",
-    })
+    SetTitle("Alert").
+    SetBody("Your order shipped").
+    SetImage("https://example.com/hero.png").
+    SetSound("default").
+    SetBadge(1).
+    SetClickAction("OPEN_ORDERS").
+    SetData("order_id", "A-1024") // string→string only
 ```
+
+Targeting: `SetToken(one)`, `SetTokens(many...)` (multicast), or `SetTopic(name)` — mutually exclusive.
 
 ## Token lifecycle
 

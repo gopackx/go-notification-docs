@@ -20,12 +20,14 @@ Confirm at https://resend.com/pricing.
 3. Generate an API key from the dashboard (starts with `re_`).
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/resend"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/resend"
+)
 
-notifier.RegisterChannel("mail", resend.New(resend.Config{
-    APIKey:   os.Getenv("RESEND_API_KEY"),
-    From:     "noreply@example.com",
-    FromName: "My App",
+notifier.RegisterChannel(resend.New(resend.Config{
+    APIKey: os.Getenv("RESEND_API_KEY"),
+    From:   mail.Address{Name: "My App", Address: "noreply@example.com"},
 }))
 ```
 
@@ -34,9 +36,7 @@ notifier.RegisterChannel("mail", resend.New(resend.Config{
 | Field       | Type     | Required | Description                                                      |
 |-------------|----------|----------|------------------------------------------------------------------|
 | `APIKey`    | `string` | yes      | Resend API key (`re_...`).                                        |
-| `From`      | `string` | yes      | Verified sender address.                                         |
-| `FromName`  | `string` | no       | Display name.                                                    |
-| `ReplyTo`   | `string` | no       | Optional Reply-To header.                                        |
+| `From`      | `mail.Address` | yes | Verified sender (use `Name` for the display name).               |
 | `Timeout`   | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                           |
 
 ## Good fit

@@ -22,49 +22,49 @@ go-notification becomes the "actually dispatch" layer; your queue is the durabil
 Don't just log and move on:
 
 ```go
-OnError: func(ctx context.Context, err notification.Error) {
+OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
     slog.Error("notification failed",
-        "channel", err.Channel,
-        "type",    err.NotificationType,
-        "notifiable", fmt.Sprintf("%T/%v", err.Notifiable, err.Notifiable),
-        "attempts", err.Attempts,
-        "err",      err.Err,
+        "channel", channel,
+        "notifiable", fmt.Sprintf("%T/%s", n, n.GetID()),
+        "err",      err,
     )
 
     // After all retries exhausted → dead-letter
-    deadLetterStore.Insert(ctx, err)
+    deadLetterStore.Insert(ctx, n, channel, err)
 
     // Page on-call if it's high priority
-    if err.NotificationType == "billing.payment_failed" {
-        pager.Fire(err)
+    if channel == "mail-billing" {
+        pager.Fire(n, err)
     }
 }
 ```
 
+`OnError` fires once per channel after all retries for that channel are exhausted.
+
 ## 3. Track metrics
 
-From `OnSent`, `OnError`, and `OnRetry`, emit counters and histograms:
+From the `OnSuccess` and `OnError` callbacks, emit counters and histograms:
 
-- `notifications_sent_total{channel,type}` — success counter.
-- `notifications_failed_total{channel,type}` — final-failure counter.
-- `notifications_retries_total{channel,type}` — retry counter; spikes predict outages.
+- `notifications_sent_total{channel}` — success counter (increment in `OnSuccess`).
+- `notifications_failed_total{channel}` — final-failure counter (increment in `OnError`).
 - `notifications_duration_seconds{channel}` — histogram of per-send latency.
-- `notifications_queue_depth` — gauge of pool queue depth (exposed via `notifier.Stats()`).
 
 Alert on:
 - Any sustained increase in the failure counter.
-- Queue depth staying high (workers falling behind).
-- Retry-rate above baseline on a specific driver (upstream degradation).
+- A growing gap between sends submitted and `OnSuccess`/`OnError` callbacks (workers falling behind).
+- Failure-rate above baseline on a specific driver (upstream degradation).
 
 ## 4. Rate-limit per channel
 
 Set a **per-channel rate limit** even if you're nowhere near it. Without one, a bad loop that calls `Send()` millions of times in a tight loop can trip your provider's abuse detection before your own circuit breakers fire.
 
 ```go
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
+    Name: "mail",
     /* ... */
-    RateLimit: 10.0, // 10/sec — conservative for Mailgun starter
 }))
+// 10 sends per second, burst of 10 — conservative for Mailgun starter
+notifier.SetRateLimit("mail", 10, time.Second, 10)
 ```
 
 See [Rate Limiting](/docs/features/rate-limiting).
@@ -105,9 +105,9 @@ For compliance (GDPR, CAN-SPAM), also maintain an audit log of consent changes. 
 When a provider reports a hard bounce or spam complaint, **stop sending to that address**. Most providers suppress internally for you, but your metrics will lie unless you mirror the suppression in your DB:
 
 ```go
-OnError: func(_ context.Context, err notification.Error) {
-    if isHardBounce(err.Err) {
-        suppressedEmails.Add(ctx, extractEmail(err))
+OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+    if isHardBounce(err) {
+        suppressedEmails.Add(ctx, n.RouteNotificationFor(channel))
     }
 }
 ```
@@ -119,8 +119,8 @@ Then in `Via()`, skip channels whose address is suppressed.
 If you do both, **use different sender domains** and **different channel names**:
 
 ```go
-notifier.RegisterChannel("mail-transactional", postmark.New(/* ... */))
-notifier.RegisterChannel("mail-marketing",     mailgun.New(/* ... */))
+notifier.RegisterChannel(postmark.New(postmark.Config{Name: "mail-transactional" /* ... */}))
+notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail-marketing" /* ... */}))
 ```
 
 Why: a spam complaint on marketing mail shouldn't poison the reputation of your password-reset domain. Most email providers actively enforce this separation — Postmark will kick you out if you send bulk on their transactional stream.
@@ -132,14 +132,14 @@ Don't just test that `Send()` works. Test that:
 - `OnError` fires when a channel returns non-retryable.
 - Retries happen the right number of times.
 - Rate limiting queues without deadlocking.
-- `Close(ctx)` drains within the deadline.
+- `Close()` drains all in-flight sends before returning.
 
 Use a test channel that returns configurable errors:
 
 ```go
 type errChannel struct { err error; calls int }
 func (e *errChannel) Name() string { return "err" }
-func (e *errChannel) Send(_ context.Context, _ notification.Notification, _ notification.Notifiable) error {
+func (e *errChannel) Send(_ context.Context, _ notification.Notifiable, _ any) error {
     e.calls++
     return e.err
 }
@@ -158,16 +158,15 @@ Not in env vars pushed from a `.env.production` file in git. Not in a config fil
 
 Load once at boot, pass to channel constructors, zero out the local copy if you want to be thorough.
 
-## 11. Log the provider message ID
+## 11. Record successful deliveries
 
-When it's available (Mailgun, SendGrid, Twilio all return one), log it. When a user says "I never got the email," having the provider message ID lets you look up the exact delivery attempt in the provider dashboard.
+When a send succeeds, log it so you can confirm delivery later. When a user says "I never got the email," having a per-channel success record lets you correlate with the provider dashboard.
 
 ```go
-OnSent: func(_ context.Context, s notification.SentInfo) {
+OnSuccess: func(_ context.Context, n notification.Notifiable, channel string) {
     slog.Info("notification sent",
-        "channel", s.Channel,
-        "provider_id", s.ProviderMessageID,
-        "attempts", s.Attempts,
+        "channel", channel,
+        "notifiable", n.GetID(),
     )
 }
 ```

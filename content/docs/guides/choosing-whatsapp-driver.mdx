@@ -92,8 +92,8 @@ Plan migrations carefully — ideally during a quiet period, with communication 
 Register primary and backup under different channel names. If the primary starts failing, your `OnError` handler can switch notifications to the backup:
 
 ```go
-notifier.RegisterChannel("whatsapp",         fonnte.New(/* primary */))
-notifier.RegisterChannel("whatsapp-backup",  wablas.New(/* backup */))
+notifier.RegisterChannel(fonnte.New(fonnte.Config{Name: "whatsapp" /* primary */}))
+notifier.RegisterChannel(wablas.New(wablas.Config{Name: "whatsapp-backup" /* backup */}))
 ```
 
 This is a decent reliability lift for unofficial providers. Not needed (and often not wanted) for official ones — their reliability is already high.

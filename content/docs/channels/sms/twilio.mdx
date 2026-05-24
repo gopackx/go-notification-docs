@@ -19,7 +19,7 @@ description: Global SMS via Twilio. The default choice for most production SMS.
 ```go
 import "github.com/gopackx/go-notification/channel/sms/twilio"
 
-notifier.RegisterChannel("sms", twilio.New(twilio.Config{
+notifier.RegisterChannel(twilio.New(twilio.Config{
     AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"),
     AuthToken:  os.Getenv("TWILIO_AUTH_TOKEN"),
     From:       "+14155238886",
@@ -42,16 +42,16 @@ func (n OTP) Via(u notification.Notifiable) []string {
     return []string{"sms"}
 }
 
-func (n OTP) ToSms(u notification.Notifiable) *sms.Message {
+func (n OTP) ToSMS(u notification.Notifiable) *sms.Message {
     return sms.NewMessage().
-        Text("Your code: " + n.Code)
+        SetText("Your code: " + n.Code)
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "sms" {
         return u.Phone // E.164 — e.g. "+628123456789"
     }
-    return nil
+    return ""
 }
 ```
 

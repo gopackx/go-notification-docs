@@ -20,8 +20,9 @@ Both are supported.
 ```go
 import "github.com/gopackx/go-notification/channel/chat/slack"
 
-notifier.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
-    URL: os.Getenv("SLACK_WEBHOOK_URL"),
+notifier.RegisterChannel(slack.New(slack.Config{
+    Name:       "slack",
+    WebhookURL: os.Getenv("SLACK_WEBHOOK_URL"),
 }))
 ```
 
@@ -33,8 +34,9 @@ notifier.RegisterChannel("slack", slack.NewWebhook(slack.WebhookConfig{
 4. Invite the bot into any channel it should post to (`/invite @YourBot`).
 
 ```go
-notifier.RegisterChannel("slack", slack.NewBot(slack.BotConfig{
-    Token:          os.Getenv("SLACK_BOT_TOKEN"),
+notifier.RegisterChannel(slack.New(slack.Config{
+    Name:           "slack",
+    BotToken:       os.Getenv("SLACK_BOT_TOKEN"),
     DefaultChannel: "#alerts",
 }))
 ```
@@ -42,49 +44,49 @@ notifier.RegisterChannel("slack", slack.NewBot(slack.BotConfig{
 ## Sending
 
 ```go
+import "github.com/gopackx/go-notification/channel/chat"
+
 func (n DeployFailed) Via(u notification.Notifiable) []string {
     return []string{"slack"}
 }
 
-func (n DeployFailed) ToSlack(u notification.Notifiable) *slack.Message {
-    return slack.NewMessage().
-        Text("Deploy failed: " + n.Service).
-        Attachment(
-            slack.NewAttachment().
-                Color("danger").
-                Field("Commit", n.Commit, true).
-                Field("Actor",  n.Actor,  true),
-        )
+func (n DeployFailed) ToChat(u notification.Notifiable) *chat.Message {
+    return chat.NewMessage().
+        SetText("Deploy failed: " + n.Service).
+        AddSlackAttachment(chat.SlackAttachment{
+            Color: "danger",
+            Fields: []chat.SlackField{
+                {Title: "Commit", Value: n.Commit, Short: true},
+                {Title: "Actor",  Value: n.Actor,  Short: true},
+            },
+        })
 }
 ```
 
 For routing per recipient (e.g. DM a specific user), return the user ID or channel ID from `RouteNotificationFor("slack")`:
 
 ```go
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "slack" {
         return u.SlackUserID // "U01ABCD..." for DMs, or "#channel-name"
     }
-    return nil
+    return ""
 }
 ```
 
 ## Configuration reference
 
-### `WebhookConfig`
+A single `slack.Config` covers both modes: set `WebhookURL` for webhook mode, or `BotToken` for `chat.postMessage` API mode.
 
-| Field     | Type     | Required | Description                                                       |
-|-----------|----------|----------|-------------------------------------------------------------------|
-| `URL`     | `string` | yes      | Incoming webhook URL from the Slack app settings.                 |
-| `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
+| Field            | Type     | Required | Description                                                       |
+|------------------|----------|----------|-------------------------------------------------------------------|
+| `WebhookURL`     | `string` | yes\*    | Incoming webhook URL from the Slack app settings (webhook mode).  |
+| `BotToken`       | `string` | yes\*    | Bot User OAuth Token (`xoxb-...`) for API mode.                    |
+| `DefaultChannel` | `string` | no       | Fallback channel if `RouteNotificationFor` returns empty.         |
+| `Name`           | `string` | no       | Channel name used by `Via()`. Defaults to `"chat"`.               |
+| `Timeout`        | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                            |
 
-### `BotConfig`
-
-| Field            | Type     | Required | Description                                                |
-|------------------|----------|----------|------------------------------------------------------------|
-| `Token`          | `string` | yes      | Bot User OAuth Token (`xoxb-...`).                         |
-| `DefaultChannel` | `string` | no       | Fallback channel if `RouteNotificationFor` returns empty. |
-| `Timeout`        | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                     |
+\* Provide either `WebhookURL` (webhook mode) or `BotToken` (API mode).
 
 ## Troubleshooting
 

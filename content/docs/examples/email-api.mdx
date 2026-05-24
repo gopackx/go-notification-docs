@@ -16,19 +16,24 @@ import (
     "os"
     "time"
 
-    "github.com/gopackx/go-notification/notification"
+    notification "github.com/gopackx/go-notification"
+    "github.com/gopackx/go-notification/channel/mail"
     "github.com/gopackx/go-notification/channel/mail/mailgun"
-    "github.com/gopackx/go-notification/message/mail"
 )
 
 type User struct {
+    ID    string
     Name  string
     Email string
 }
 
-func (u User) RouteNotificationFor(channel string) any {
-    if channel == "mail" { return u.Email }
-    return nil
+func (u User) GetID() string { return u.ID }
+
+func (u User) RouteNotificationFor(channel string) string {
+    if channel == "mail" {
+        return u.Email
+    }
+    return ""
 }
 
 type PasswordReset struct {
@@ -40,8 +45,8 @@ func (n PasswordReset) Via(_ notification.Notifiable) []string { return []string
 func (n PasswordReset) ToMail(notifiable notification.Notifiable) *mail.Message {
     u := notifiable.(User)
     return mail.NewMessage().
-        Subject("Reset your password").
-        Greeting("Hi " + u.Name + ",").
+        SetSubject("Reset your password").
+        SetGreeting("Hi " + u.Name + ",").
         Line("We received a request to reset your password.").
         Action("Reset password", n.ResetURL).
         Line("This link expires in 30 minutes. If you didn't request this, ignore this email.")
@@ -50,22 +55,22 @@ func (n PasswordReset) ToMail(notifiable notification.Notifiable) *mail.Message 
 func main() {
     notifier := notification.New(notification.Config{})
 
-    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    notifier.RegisterChannel(mailgun.New(mailgun.Config{
         Domain: "mg.example.com",
         APIKey: os.Getenv("MAILGUN_API_KEY"),
-        From:   "no-reply@example.com",
+        From:   mail.Address{Name: "Acme", Address: "no-reply@example.com"},
     }))
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
 
-    user := User{Name: "Dani", Email: "dani@example.com"}
+    user := User{ID: "1", Name: "Dani", Email: "dani@example.com"}
     if err := notifier.Send(ctx, user, PasswordReset{
         ResetURL: "https://app.example.com/reset?token=abc",
     }); err != nil {
         log.Fatal(err)
     }
-    notifier.Close(ctx)
+    notifier.Close()
 }
 ```
 
@@ -74,11 +79,14 @@ func main() {
 Swap the channel registration only — notification code is identical.
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/sendgrid"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/sendgrid"
+)
 
-notifier.RegisterChannel("mail", sendgrid.New(sendgrid.Config{
+notifier.RegisterChannel(sendgrid.New(sendgrid.Config{
     APIKey: os.Getenv("SENDGRID_API_KEY"),
-    From:   "no-reply@example.com",
+    From:   mail.Address{Name: "Acme", Address: "no-reply@example.com"},
 }))
 ```
 
@@ -109,16 +117,22 @@ If your mail lands in spam:
 Replace the driver with [Mailtrap](/docs/channels/email/mailtrap) in sandbox mode:
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/mailtrap"
+import (
+    "strconv"
+
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/mailtrap"
+)
 
 if os.Getenv("APP_ENV") == "production" {
-    notifier.RegisterChannel("mail", mailgun.New(/* ... */))
+    notifier.RegisterChannel(mailgun.New(mailgun.Config{ /* ... */ }))
 } else {
-    notifier.RegisterChannel("mail", mailtrap.New(mailtrap.Config{
-        Mode:    mailtrap.ModeSandbox,
-        APIKey:  os.Getenv("MAILTRAP_API_TOKEN"),
-        InboxID: os.Getenv("MAILTRAP_INBOX_ID"),
-        From:    "dev@example.com",
+    inboxID, _ := strconv.Atoi(os.Getenv("MAILTRAP_INBOX_ID"))
+    notifier.RegisterChannel(mailtrap.New(mailtrap.Config{
+        Sandbox:  true,
+        APIToken: os.Getenv("MAILTRAP_API_TOKEN"),
+        InboxID:  inboxID,
+        From:     mail.Address{Name: "Dev", Address: "dev@example.com"},
     }))
 }
 ```

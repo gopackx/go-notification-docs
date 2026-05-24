@@ -9,104 +9,145 @@ description: The Notifier type and its Config. Every go-notification app starts 
 func New(cfg Config) *Notifier
 ```
 
-Creates a new notifier. The returned `*Notifier` is safe for concurrent use and should be a long-lived singleton in your application.
+Creates a new notifier and applies defaults to any zero-valued `Config` fields. The returned `*Notifier` is safe for concurrent use and should be a long-lived singleton. It starts a background worker pool when `Async` is enabled (the default), so it **must** be closed with `Close()` when no longer needed.
 
 ## `Notifier` methods
 
 ```go
-func (n *Notifier) RegisterChannel(name string, ch Channel)
-func (n *Notifier) Send(ctx context.Context, to Notifiable, notif Notification) error
-func (n *Notifier) SendMulti(ctx context.Context, to []Notifiable, notif Notification) error
-func (n *Notifier) SendOnDemand(ctx context.Context, routes OnDemand, notif Notification) error
-func (n *Notifier) SendTo(ctx context.Context, to Notifiable, routes OnDemand, notif Notification) error
-func (n *Notifier) Close(ctx context.Context) error
+func (n *Notifier) RegisterChannel(ch Channel)
+func (n *Notifier) Channel(name string) Channel
+func (n *Notifier) SetRateLimit(channel string, rate int, interval time.Duration, burst int)
+func (n *Notifier) Send(ctx context.Context, notifiable Notifiable, notif Notification, opts ...SendOption) error
+func (n *Notifier) SendMulti(ctx context.Context, notifiables []Notifiable, notif Notification, opts ...SendOption) error
+func (n *Notifier) Close()
 ```
 
 ### RegisterChannel
 
-Register a driver under a name. Name can be anything — you reference it from `Notification.Via()`.
+```go
+func (n *Notifier) RegisterChannel(ch Channel)
+```
+
+Registers a driver. The channel's identifier comes from its own `Name()` method — there is no name argument. Registering a second channel that reports the same name replaces the first. You reference the name from `Notification.Via()`.
+
+### Channel
+
+```go
+func (n *Notifier) Channel(name string) Channel
+```
+
+Returns the registered channel for `name`, or `nil` if none. Useful for reaching channel-specific APIs — e.g. type-asserting the database channel to query stored notifications.
+
+### SetRateLimit
+
+```go
+func (n *Notifier) SetRateLimit(channel string, rate int, interval time.Duration, burst int)
+```
+
+Installs a token-bucket rate limiter for a single channel. See [Rate Limiting](/docs/features/rate-limiting).
 
 ### Send
 
-Dispatch a notification to one recipient. In async mode (default), returns immediately after enqueueing; errors surface via `OnError`. In sync mode, blocks until all channels complete and returns the first error.
+```go
+func (n *Notifier) Send(ctx context.Context, notifiable Notifiable, notif Notification, opts ...SendOption) error
+```
+
+Dispatches a notification to one recipient on every channel returned by `notif.Via(notifiable)` (unless overridden with the `Via` option). In async mode (default) it returns `nil` immediately after dispatching, and delivery errors surface via `Config.OnError`. In sync mode it blocks until every channel completes and returns the joined errors. After `Close()`, it returns `ErrClosed`.
 
 ### SendMulti
 
-Same as `Send` but for many recipients. See [Broadcast](/docs/features/broadcast).
+```go
+func (n *Notifier) SendMulti(ctx context.Context, notifiables []Notifiable, notif Notification, opts ...SendOption) error
+```
 
-### SendOnDemand
-
-Send without a `Notifiable` — pass raw routes per channel. See [On-Demand Channels](/docs/features/on-demand-channels).
+Calls `Send` for each notifiable independently; one failure does not stop the others. See [Broadcast](/docs/features/broadcast).
 
 ### Close
 
-Wait for the worker pool to drain and stop. Use with a context deadline to bound the wait.
+```go
+func (n *Notifier) Close()
+```
+
+Shuts down the worker pool and waits for in-flight deliveries to complete. Takes no arguments and returns nothing. Idempotent — safe to call more than once. Subsequent `Send` calls return `ErrClosed`.
 
 ## `Config`
 
 ```go
 type Config struct {
-    Async        bool
-    WorkerCount  int
-    QueueSize    int
+    // Async dispatches each delivery on a worker goroutine when true.
+    // When false, Send blocks until delivery completes. Default: true.
+    Async *bool
 
-    MaxRetries    int
-    RetryDelay    time.Duration
-    RetryBackoff  float64
-    RetryMaxDelay time.Duration
-    RetryJitter   float64
-    RetryPolicy   RetryPolicy    // optional — overrides MaxRetries/RetryDelay/etc.
+    // WorkerPool is the max concurrent in-flight sends. Default: 10.
+    WorkerPool int
 
-    RateLimit       float64       // global ops/sec
-    RateLimitBurst  int
+    // QueueSize is the buffered queue feeding the pool.
+    // Default: WorkerPool * 10.
+    QueueSize int
 
-    TemplateRegistry TemplateRegistry
+    // MaxRetries is the number of retries after the first attempt.
+    // Total attempts = 1 + MaxRetries. Negative disables retry. Default: 3.
+    MaxRetries int
 
-    OnError func(ctx context.Context, err Error)
-    OnRetry func(ctx context.Context, attempt int, err error)
-    OnSent  func(ctx context.Context, info SentInfo)
+    // RetryDelay is the base delay for exponential backoff. Default: 1s.
+    // The Nth retry waits RetryDelay * 2^(N-1), capped at 60s, with jitter.
+    RetryDelay time.Duration
 
-    Logger   Logger // optional; defaults to a redacting slog handler
-    Clock    Clock  // optional; swap for tests
+    // Logger receives structured events. Default: slog.Default().
+    Logger *slog.Logger
+
+    // OnError runs after all retries for a channel are exhausted.
+    OnError func(ctx context.Context, n Notifiable, channel string, err error)
+
+    // OnSuccess runs after a notification is delivered on a channel.
+    OnSuccess func(ctx context.Context, n Notifiable, channel string)
 }
 ```
 
-## `Error`
+<Callout type="warn">
+  `Async` is a `*bool`, not a `bool`, so its zero value (`nil`) can default to
+  `true`. Use the `notification.BoolPtr` helper to set it explicitly:
+  `Async: notification.BoolPtr(false)`.
+</Callout>
+
+### `notification.BoolPtr`
 
 ```go
-type Error struct {
-    Channel           string
-    NotificationType  string
-    Notifiable        Notifiable
-    Err               error
-    Attempts          int
-}
+func BoolPtr(v bool) *bool
 ```
 
-Passed to `OnError`. Includes everything you need to log, alert, or feed into a dead-letter store.
+Returns a pointer to `v`. Provided so you can set `Config.Async` inline.
 
-## `SentInfo`
+## `SendOption`
+
+Per-call options passed as the trailing `opts ...SendOption` argument to `Send`/`SendMulti`:
 
 ```go
-type SentInfo struct {
-    Channel           string
-    NotificationType  string
-    Notifiable        Notifiable
-    Duration          time.Duration
-    Attempts          int
-    ProviderMessageID string // if the driver returns one (e.g. Mailgun message ID)
-}
+func Via(channels ...string) SendOption // override Notification.Via for this call
+func Sync() SendOption                  // force synchronous delivery
+func Async() SendOption                 // force background delivery
 ```
-
-Passed to `OnSent` after a successful send. Great for observability metrics and audit logs.
-
-## `OnDemand`
 
 ```go
-type OnDemand map[string]any
+n.Send(ctx, user, OrderShipped{...}, notification.Via("mail"))     // only mail
+n.Send(ctx, user, OTPCode{Code: "123456"}, notification.Sync())    // block until sent
 ```
 
-Keys are channel names. Values are whatever `RouteNotificationFor(channel)` would normally return.
+## Errors
+
+The package exposes sentinel errors for comparison with `errors.Is`:
+
+```go
+var (
+    ErrNoChannel       = errors.New("notification: channel not registered")
+    ErrInvalidMessage  = errors.New("notification: invalid message type for channel")
+    ErrNoRoute         = errors.New("notification: notifiable has no route for channel")
+    ErrNoFormatter     = errors.New("notification: notification has no formatter for channel")
+    ErrClosed          = errors.New("notification: notifier closed")
+    ErrRateLimited     = errors.New("notification: rate limit exceeded")
+    ErrRetriesExceeded = errors.New("notification: max retries exceeded")
+)
+```
 
 ## Recommended singleton pattern
 
@@ -119,12 +160,14 @@ var (
 func Notifier() *notification.Notifier {
     notifierOnce.Do(func() {
         notifier = notification.New(notification.Config{
-            OnError: func(ctx context.Context, err notification.Error) {
-                slog.Error("notification failed", "err", err.Err)
+            WorkerPool: 20,
+            MaxRetries: 3,
+            OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+                slog.Error("notification failed", "channel", channel, "id", n.GetID(), "err", err)
             },
         })
-        // Register channels once at boot
-        notifier.RegisterChannel("mail", /* ... */)
+        // Register channels once at boot.
+        notifier.RegisterChannel(mailgun.New(mailgun.Config{ /* ... */ }))
     })
     return notifier
 }

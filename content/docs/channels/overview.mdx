@@ -42,6 +42,52 @@ Firebase Cloud Messaging (FCM) — iOS, Android, and Web.
 ### Webhook (1 driver)
 Generic HTTP POST for any custom integration.
 
+## Registering channels
+
+A channel is registered by its driver. The name it reports from `Name()` is the string you use in `Notification.Via` and `RouteNotificationFor`. Defaults per family:
+
+| Family | Default `Name()` |
+|--------|------------------|
+| Email | `"mail"` |
+| SMS | `"sms"` |
+| Chat (Slack, Telegram, Discord, Teams) | `"chat"` |
+| WhatsApp | `"whatsapp"` |
+| Push | `"push"` |
+| Webhook | `"webhook"` |
+| Database | `"database"` |
+
+```go
+notifier.RegisterChannel(mailgun.New(mailgun.Config{ /* ... */ }))
+// registered as "mail" → Via returns []string{"mail"}
+```
+
+## Multiple instances of one driver
+
+`RegisterChannel` keys by `Name()`, so two drivers reporting the same name collide (the second replaces the first). To run more than one instance of a family — transactional vs. marketing mail, or Slack **and** Telegram (both default to `"chat"`) — give each a distinct name via its `Config.Name` field:
+
+```go
+notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail_tx", /* ... */}))
+notifier.RegisterChannel(sendgrid.New(sendgrid.Config{Name: "mail_mk", /* ... */}))
+
+notifier.RegisterChannel(slack.New(slack.Config{Name: "slack", /* ... */}))
+notifier.RegisterChannel(telegram.New(telegram.Config{Name: "telegram", /* ... */}))
+```
+
+Then reference those names everywhere:
+
+```go
+func (n Promo) Via(notification.Notifiable) []string { return []string{"mail_mk", "slack"} }
+
+func (u User) RouteNotificationFor(channel string) string {
+    switch channel {
+    case "mail_tx", "mail_mk": return u.Email
+    case "slack":              return u.SlackWebhook
+    case "telegram":           return u.TelegramChatID
+    }
+    return ""
+}
+```
+
 ## Decision guides
 
 Picking the right provider matters more than the code you write around it. Dedicated guides:

@@ -14,57 +14,62 @@ The webhook channel POSTs a JSON payload to a URL you configure. Use it to:
 ```go
 import "github.com/gopackx/go-notification/channel/webhook"
 
-notifier.RegisterChannel("ops-webhook", webhook.New(webhook.Config{
-    URL:    os.Getenv("OPS_WEBHOOK_URL"),
-    Secret: os.Getenv("OPS_WEBHOOK_SECRET"), // used for HMAC signing
-    Headers: map[string]string{
+notifier.RegisterChannel(webhook.New(webhook.Config{
+    DefaultURL:    os.Getenv("OPS_WEBHOOK_URL"),
+    SigningSecret: os.Getenv("OPS_WEBHOOK_SECRET"), // used for HMAC signing
+    DefaultHeaders: map[string]string{
         "X-Source": "go-notification",
     },
 }))
 ```
 
+The driver registers as `"webhook"`. To run more than one webhook target, give each a distinct `Config.Name` and reference those names in `Via`.
+
 ## Sending
+
+The body is exactly what you set with `SetJSON` (or `SetForm`/`SetRaw`) — there is no automatic envelope. Build the payload shape your receiver expects:
 
 ```go
 func (n OrderShipped) Via(u notification.Notifiable) []string {
-    return []string{"ops-webhook"}
+    return []string{"webhook"}
 }
 
 func (n OrderShipped) ToWebhook(u notification.Notifiable) *webhook.Message {
     return webhook.NewMessage().
-        Event("order.shipped").
-        Payload(map[string]any{
-            "order_id":  n.OrderID,
-            "user_id":   u.(User).ID,
+        SetJSON(map[string]any{
+            "event":      "order.shipped",
+            "order_id":   n.OrderID,
+            "user_id":    u.GetID(),
             "shipped_at": time.Now().UTC(),
         })
 }
 ```
 
+Per-message overrides: `SetURL(url)`, `SetMethod("PUT")`, `AddHeader(k, v)`. Use `SetForm(map[string]string{...})` for form-encoded bodies or `SetRaw([]byte{...})` for raw bytes.
+
 ## Configuration reference
 
-| Field       | Type                | Required | Description                                                     |
-|-------------|---------------------|----------|-----------------------------------------------------------------|
-| `URL`       | `string`            | yes      | Destination URL.                                                |
-| `Secret`    | `string`            | no       | HMAC-SHA256 secret. If set, sends `X-Signature` header.          |
-| `Method`    | `string`            | no       | HTTP method. Default: `"POST"`.                                 |
-| `Headers`   | `map[string]string` | no       | Static headers to include on every request.                      |
-| `Timeout`   | `time.Duration`     | no       | HTTP timeout per send. Default: `30s`.                           |
+| Field            | Type                | Required | Description                                                |
+|------------------|---------------------|----------|------------------------------------------------------------|
+| `DefaultURL`     | `string`            | no*      | URL used when a message sets no `URL`. *Required unless every message calls `SetURL`. |
+| `DefaultHeaders` | `map[string]string` | no       | Headers added to every request (merged with per-message). |
+| `SigningSecret`  | `string`            | no       | HMAC-SHA256 secret. If set, adds the `X-Signature` header.  |
+| `Timeout`        | `time.Duration`     | no       | HTTP timeout per send. Default: `30s`.                     |
+| `Name`           | `string`            | no       | Override the channel name. Default: `"webhook"`.            |
+
+The HTTP method defaults to `POST` and is set per message via `SetMethod`.
 
 ## Request format
+
+The request body is your `SetJSON` payload verbatim. When `SigningSecret` is set and the body is non-empty, the driver adds an `X-Signature` header:
 
 ```
 POST /your-webhook HTTP/1.1
 Content-Type: application/json
-X-Signature: sha256=<hex-hmac-of-body>
+X-Signature: sha256=<hex-hmac-sha256-of-raw-body>
 X-Source: go-notification
 
-{
-  "event": "order.shipped",
-  "sent_at": "2026-04-18T10:15:03Z",
-  "notifiable": { "type": "user", "id": 123 },
-  "data": { "order_id": "A-1024", ... }
-}
+{ "event": "order.shipped", "order_id": "A-1024", "user_id": "123", "shipped_at": "2026-04-18T10:15:03Z" }
 ```
 
 ## Verifying signatures on the receiver

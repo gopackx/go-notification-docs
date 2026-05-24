@@ -14,11 +14,12 @@ import (
     "context"
     "log"
     "os"
+    "strconv"
     "time"
 
-    "github.com/gopackx/go-notification/notification"
+    notification "github.com/gopackx/go-notification"
+    "github.com/gopackx/go-notification/channel/mail"
     "github.com/gopackx/go-notification/channel/mail/mailgun"
-    "github.com/gopackx/go-notification/message/mail"
 )
 
 type User struct {
@@ -26,11 +27,13 @@ type User struct {
     Email string
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) GetID() string { return strconv.FormatInt(u.ID, 10) }
+
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "mail" {
         return u.Email
     }
-    return nil
+    return ""
 }
 
 type OrderShipped struct {
@@ -43,8 +46,8 @@ func (n OrderShipped) Via(u notification.Notifiable) []string {
 
 func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order has shipped").
-        Line("Hi there,").
+        SetSubject("Your order has shipped").
+        SetGreeting("Hi there,").
         Line("Your order " + n.OrderID + " is on its way.").
         Action("Track package", "https://example.com/track/"+n.OrderID).
         Line("Thanks for shopping with us.")
@@ -53,10 +56,10 @@ func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
 func main() {
     notifier := notification.New(notification.Config{})
 
-    notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+    notifier.RegisterChannel(mailgun.New(mailgun.Config{
         Domain: "mg.example.com",
         APIKey: os.Getenv("MAILGUN_API_KEY"),
-        From:   "noreply@example.com",
+        From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
     }))
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -69,7 +72,7 @@ func main() {
     }
 
     // Give the async worker a moment to flush before the program exits.
-    notifier.Close(ctx)
+    notifier.Close()
     log.Println("done")
 }
 ```
@@ -83,8 +86,8 @@ go run .
 
 ## What's happening
 
-1. `notification.New()` spins up a worker pool with sane defaults — async sends, exponential-backoff retries, 30s timeout.
-2. `RegisterChannel("mail", ...)` wires up one driver under one name.
+1. `notification.New()` spins up a worker pool with sane defaults — async sends, exponential-backoff retries.
+2. `RegisterChannel(...)` wires up one driver; its name comes from the driver's `Name()` (here, `"mail"`).
 3. `Send()` calls `OrderShipped.Via()` to get channel names, then for each one calls `ToMail()` to build the message and dispatches to the Mailgun driver.
 4. `Close()` waits for in-flight sends to finish. Without it, a short program may exit before the async send completes.
 

@@ -14,7 +14,8 @@ description: Post notifications to Discord channels via webhooks.
 ```go
 import "github.com/gopackx/go-notification/channel/chat/discord"
 
-notifier.RegisterChannel("discord", discord.New(discord.Config{
+notifier.RegisterChannel(discord.New(discord.Config{
+    Name:       "discord",
     WebhookURL: os.Getenv("DISCORD_WEBHOOK_URL"),
 }))
 ```
@@ -22,32 +23,35 @@ notifier.RegisterChannel("discord", discord.New(discord.Config{
 ## Sending
 
 ```go
+import "github.com/gopackx/go-notification/channel/chat"
+
 func (n BuildFailed) Via(u notification.Notifiable) []string {
     return []string{"discord"}
 }
 
-func (n BuildFailed) ToDiscord(u notification.Notifiable) *discord.Message {
-    return discord.NewMessage().
-        Content("Build failed on " + n.Branch).
-        Embed(
-            discord.NewEmbed().
-                Title(n.Service).
-                Description(n.Error).
-                Color(0xFF0000). // red
-                Field("Commit", n.Commit, true).
-                Field("Author", n.Author, true),
-        )
+func (n BuildFailed) ToChat(u notification.Notifiable) *chat.Message {
+    return chat.NewMessage().
+        SetText("Build failed on " + n.Branch).
+        AddDiscordEmbed(chat.DiscordEmbed{
+            Title:       n.Service,
+            Description: n.Error,
+            Color:       0xFF0000, // red
+            Fields: []chat.DiscordField{
+                {Name: "Commit", Value: n.Commit, Inline: true},
+                {Name: "Author", Value: n.Author, Inline: true},
+            },
+        })
 }
 ```
 
 ## Configuration reference
 
-| Field         | Type     | Required | Description                                                    |
-|---------------|----------|----------|----------------------------------------------------------------|
-| `WebhookURL`  | `string` | yes      | Discord webhook URL (includes token — treat as a secret).       |
-| `Username`    | `string` | no       | Override bot name per message.                                  |
-| `AvatarURL`   | `string` | no       | Override bot avatar per message.                                |
-| `Timeout`     | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
+| Field             | Type     | Required | Description                                                    |
+|-------------------|----------|----------|----------------------------------------------------------------|
+| `WebhookURL`      | `string` | yes      | Discord webhook URL (includes token — treat as a secret).       |
+| `DefaultUsername` | `string` | no       | Default bot name; override per message via `DiscordUsername`.   |
+| `Name`            | `string` | no       | Channel name used by `Via()`. Defaults to `"chat"`.             |
+| `Timeout`         | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                         |
 
 ## Tips
 

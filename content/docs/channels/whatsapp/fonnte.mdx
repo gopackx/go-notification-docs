@@ -26,7 +26,7 @@ Fonnte uses the unofficial WhatsApp Web protocol. Against WhatsApp Terms of Serv
 ```go
 import "github.com/gopackx/go-notification/channel/whatsapp/fonnte"
 
-notifier.RegisterChannel("whatsapp", fonnte.New(fonnte.Config{
+notifier.RegisterChannel(fonnte.New(fonnte.Config{
     Token: os.Getenv("FONNTE_TOKEN"),
 }))
 ```
@@ -36,7 +36,6 @@ notifier.RegisterChannel("whatsapp", fonnte.New(fonnte.Config{
 | Field     | Type     | Required | Description                                                         |
 |-----------|----------|----------|---------------------------------------------------------------------|
 | `Token`   | `string` | yes      | Fonnte device token. One token per connected WhatsApp number.       |
-| `BaseURL` | `string` | no       | Override the API base URL. Default: `https://api.fonnte.com`.       |
 | `Timeout` | `time.Duration` | no | HTTP timeout per send. Default: `30s`.                              |
 
 ## Sending
@@ -44,7 +43,7 @@ notifier.RegisterChannel("whatsapp", fonnte.New(fonnte.Config{
 ```go
 func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
     return whatsapp.NewMessage().
-        Text("Halo! Pesanan " + n.OrderID + " sudah dikirim.")
+        SetText("Halo! Pesanan " + n.OrderID + " sudah dikirim.")
 }
 ```
 

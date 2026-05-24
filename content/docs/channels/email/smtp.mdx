@@ -27,18 +27,23 @@ Port 587 (STARTTLS) usually works, but some providers restrict it too.
 ## Setup
 
 ```go
-import "github.com/gopackx/go-notification/channel/mail/smtp"
+import (
+    "github.com/gopackx/go-notification/channel/mail"
+    "github.com/gopackx/go-notification/channel/mail/smtp"
+)
 
-notifier.RegisterChannel("mail", smtp.New(smtp.Config{
+notifier.RegisterChannel(smtp.New(smtp.Config{
     Host:     "smtp.gmail.com",
-    Port:     587,
+    Port:     587, // STARTTLS — leave TLS false; the driver upgrades automatically
     Username: "user@gmail.com",
     Password: os.Getenv("SMTP_PASSWORD"),
-    From:     "noreply@example.com",
-    FromName: "My App",
-    TLS:      true,
+    From:     mail.Address{Name: "My App", Address: "noreply@example.com"},
 }))
 ```
+
+<Callout type="warn" title="TLS field = implicit TLS (port 465)">
+Set `TLS: true` only for **implicit TLS on port 465**. For **STARTTLS on port 587**, leave `TLS: false` — the driver upgrades the connection automatically when the server advertises STARTTLS. Setting `TLS: true` on port 587 will fail the handshake.
+</Callout>
 
 ## Gmail app password
 
@@ -54,17 +59,19 @@ Gmail won't accept your regular password for SMTP. You need an **app password**:
 | Field       | Type     | Required | Description                                                           |
 |-------------|----------|----------|-----------------------------------------------------------------------|
 | `Host`      | `string` | yes      | SMTP server hostname (e.g. `smtp.gmail.com`).                         |
-| `Port`      | `int`    | yes      | Usually `587` for STARTTLS, `465` for implicit TLS, `25` for plain.   |
-| `Username`  | `string` | yes      | SMTP auth username.                                                   |
-| `Password`  | `string` | yes      | SMTP auth password or app password.                                   |
-| `From`      | `string` | yes      | Default sender address.                                               |
-| `FromName`  | `string` | no       | Display name for the sender.                                          |
-| `TLS`       | `bool`   | no       | Use STARTTLS on port 587. Default: `true` when port is 587.           |
-| `Timeout`   | `time.Duration` | no | Connection + send timeout. Default: `30s`.                           |
+| `Port`      | `int`    | yes      | `587` for STARTTLS, `465` for implicit TLS, `25` for plain.           |
+| `Username`  | `string` | no       | SMTP auth username. Leave empty for no auth.                          |
+| `Password`  | `string` | no       | SMTP auth password or app password.                                   |
+| `AuthMechanism` | `string` | no   | `"plain"` (default) or `"login"`.                                     |
+| `From`      | `mail.Address` | yes | Default sender. A struct: `mail.Address{Name, Address}`.             |
+| `TLS`       | `bool`   | no       | Implicit TLS (port 465). Leave `false` for STARTTLS on 587.          |
+| `InsecureSkipVerify` | `bool` | no | Disable TLS cert verification. Never use in production.             |
+| `Timeout`   | `time.Duration` | no | Connect + handshake timeout. Default: `30s`.                        |
+| `Name`      | `string` | no       | Override the channel name (default `"mail"`).                        |
 
 ## Troubleshooting
 
 - **`connection refused`** — wrong host/port, or firewall / cloud provider blocking.
-- **`EOF` after HELO** — TLS required but `TLS: false`. Set `TLS: true`.
+- **handshake error on port 587** — you set `TLS: true`. Leave it `false`; STARTTLS upgrades automatically.
 - **`535 5.7.8`** — bad credentials. For Gmail, you need an app password, not your account password.
 - **Works locally, fails in prod** — your cloud provider is almost certainly blocking port 25/587. Switch to an API driver.

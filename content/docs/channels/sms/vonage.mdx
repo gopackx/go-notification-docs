@@ -19,7 +19,7 @@ description: Vonage API — formerly Nexmo. Similar to Twilio, solid global cove
 ```go
 import "github.com/gopackx/go-notification/channel/sms/vonage"
 
-notifier.RegisterChannel("sms", vonage.New(vonage.Config{
+notifier.RegisterChannel(vonage.New(vonage.Config{
     APIKey:    os.Getenv("VONAGE_API_KEY"),
     APISecret: os.Getenv("VONAGE_API_SECRET"),
     From:      "YourBrand", // or +E.164 number, country-dependent
@@ -40,8 +40,8 @@ notifier.RegisterChannel("sms", vonage.New(vonage.Config{
 A common high-reliability setup: Twilio as primary, Vonage as backup.
 
 ```go
-notifier.RegisterChannel("sms",         twilio.New(/* ... */))
-notifier.RegisterChannel("sms-backup",  vonage.New(/* ... */))
+notifier.RegisterChannel(twilio.New(twilio.Config{ /* ... */ }))
+notifier.RegisterChannel(vonage.New(vonage.Config{ /* ... */ Name: "sms-backup" }))
 
 func (n OTP) Via(u notification.Notifiable) []string {
     return []string{"sms"}

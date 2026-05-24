@@ -13,7 +13,7 @@ type Notification interface {
 }
 ```
 
-Just one required method. Everything else — `ToMail`, `ToWhatsApp`, `ToSms`, etc. — is optional and discovered by the driver via Go type assertion at send time.
+Just one required method. Everything else — `ToMail`, `ToWhatsApp`, `ToSMS`, etc. — is optional and discovered by each channel via Go type assertion at send time.
 
 ## `Via`
 
@@ -24,67 +24,71 @@ func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
     user := notifiable.(User)
 
     channels := []string{"database"} // in-app is always on
-    if user.EmailVerified   { channels = append(channels, "mail") }
-    if user.WantsWhatsApp   { channels = append(channels, "whatsapp") }
+    if user.EmailVerified { channels = append(channels, "mail") }
+    if user.WantsWhatsApp { channels = append(channels, "whatsapp") }
     return channels
 }
 ```
 
 ## Per-channel render methods
 
-Each channel expects a method that produces its message shape. The signatures are listed in [Message Types](/docs/api-reference/message-types). Here's the surface:
+Each channel expects one method that produces its message shape. The full signatures are in [Message Types](/docs/api-reference/message-types). The surface:
 
 ```go
 func (n MyNotification) ToMail(u Notifiable)     *mail.Message
 func (n MyNotification) ToWhatsApp(u Notifiable) *whatsapp.Message
-func (n MyNotification) ToSms(u Notifiable)      *sms.Message
+func (n MyNotification) ToSMS(u Notifiable)      *sms.Message
 func (n MyNotification) ToPush(u Notifiable)     *push.Message
-func (n MyNotification) ToSlack(u Notifiable)    *slack.Message
-func (n MyNotification) ToTelegram(u Notifiable) *telegram.Message
-func (n MyNotification) ToDiscord(u Notifiable)  *discord.Message
-func (n MyNotification) ToTeams(u Notifiable)    *teams.Message
-func (n MyNotification) ToDatabase(u Notifiable) map[string]any
+func (n MyNotification) ToChat(u Notifiable)     *chat.Message
+func (n MyNotification) ToDatabase(u Notifiable) *database.Message
 func (n MyNotification) ToWebhook(u Notifiable)  *webhook.Message
 ```
 
-You only implement the ones listed in your `Via()`. If `Via` returns `[]string{"mail", "database"}`, you need `ToMail` and `ToDatabase` — the rest don't need to exist.
+<Callout type="warn">
+  There is no `ToSlack`/`ToTelegram`/`ToDiscord`/`ToTeams`. Slack, Telegram,
+  Discord, and Microsoft Teams all share a single **chat** channel: implement
+  `ToChat` returning a `*chat.Message`, and set provider-specific extras
+  (Slack attachments, Discord embeds, Telegram parse mode) on that one message.
+  Also note the SMS method is `ToSMS` (uppercase), not `ToSms` — a misspelling
+  is silently not discovered.
+</Callout>
 
-## Optional hooks
+You only implement the ones listed in your `Via()`. If `Via` returns `[]string{"mail", "database"}`, you need `ToMail` and `ToDatabase` — the rest don't need to exist. If a channel in `Via` has no matching `To<Channel>` method, that channel is skipped (`ErrNoFormatter`, logged at debug level).
 
-```go
-func (n MyNotification) ShouldRetry(err error) bool
-```
+## Custom channels: `ChannelFormatter`
 
-Return `false` to skip retry for specific errors. Useful for time-sensitive notifications (OTPs past their expiry).
-
-```go
-func (n MyNotification) Type() string
-```
-
-Override the type string used in logs and the database channel. Defaults to the Go type name.
-
-## Channel name matching
-
-The `Via()` strings must match the names you registered with `RegisterChannel`. A typo returns an error through `OnError`:
+For channels beyond the built-in ones, implement the optional `ChannelFormatter` interface. The notifier calls it only when no per-channel interface matches:
 
 ```go
-// Registered
-notifier.RegisterChannel("mail-transactional", /* ... */)
-
-// Typo — "mail" isn't registered
-func (n OrderShipped) Via(u Notifiable) []string {
-    return []string{"mail"} // → OnError called with "channel 'mail' not registered"
+type ChannelFormatter interface {
+    Format(channel string, notifiable Notifiable) any
 }
 ```
 
-## Zero-value notifications
+See [Writing a Custom Channel](/docs/guides/custom-channel).
 
-Notifications are typically struct values, not pointers. Because `Via` receives a `Notifiable` and returns a `[]string`, the notification struct itself often has all data passed in at construction:
+## Channel name matching
+
+The `Via()` strings must match the names your registered channels report from `Name()`. An unregistered name surfaces through `OnError`:
+
+```go
+// Registered under its own Name() — "mail" for a default mail driver.
+notifier.RegisterChannel(mailgun.New(mailgun.Config{ /* ... */ }))
+
+// "email" isn't registered → dispatch fails with ErrNoChannel.
+func (n OrderShipped) Via(u notification.Notifiable) []string {
+    return []string{"email"}
+}
+```
+
+## Notifications carry their data
+
+Notifications are typically struct values with all data passed in at construction:
 
 ```go
 type OrderShipped struct {
-    OrderID     string
-    TrackingURL string
+    OrderID          string
+    TrackingURL      string
     EstimatedArrival time.Time
 }
 
@@ -97,6 +101,8 @@ notifier.Send(ctx, user, OrderShipped{
 
 ## Testing a notification
 
+`Via` and the `To<Channel>` methods are plain functions — test them without a notifier. Message fields like `Subject` are struct fields (not methods):
+
 ```go
 func TestOrderShippedVia(t *testing.T) {
     user := User{EmailVerified: true, WantsWhatsApp: false}
@@ -106,6 +112,6 @@ func TestOrderShippedVia(t *testing.T) {
 
 func TestOrderShippedToMail(t *testing.T) {
     msg := OrderShipped{OrderID: "A-1"}.ToMail(User{})
-    require.Contains(t, msg.Subject(), "A-1")
+    require.Contains(t, msg.Subject, "A-1")
 }
 ```

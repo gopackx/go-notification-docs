@@ -34,15 +34,15 @@ for i := 0; i < len(allUsers); i += chunkSize {
 }
 ```
 
-## Provider-specific batching
+## How SendMulti dispatches
 
-Some providers have batch APIs:
+`SendMulti` is a thin loop: it calls `Send` once per notifiable and joins any errors. It does **not** coalesce recipients into provider batch APIs — each recipient is dispatched independently (on the worker pool in async mode). One recipient failing does not stop the others.
 
-- **Mailgun** — `batch_size=1000` recipients per API call, same content.
-- **SendGrid** — personalizations array up to 1000 per request.
-- **FCM** — multicast up to 500 tokens per request.
+The one place batching happens is **within a single message**: FCM multicasts when a `push.Message` carries multiple `Tokens` (set via `SetTokens(...)` in `ToPush`). That's per-message, not across `SendMulti` recipients.
 
-The drivers use these automatically when `SendMulti` detects same-content sends across the same channel. If you use per-recipient content (personalized subject lines, etc.), they fall back to single-recipient calls.
+```go
+err := notifier.SendMulti(ctx, users, WeeklyDigest{}) // errors.Join of per-recipient failures
+```
 
 ## When not to use SendMulti
 
@@ -51,14 +51,14 @@ The drivers use these automatically when `SendMulti` detects same-content sends 
 
 ## Per-recipient error handling
 
-Errors from individual recipients fire the usual `OnError` callback, including which notifiable failed:
+Errors from individual recipients fire the usual `OnError` callback, which receives the failing notifiable and channel:
 
 ```go
-OnError: func(ctx context.Context, err notification.Error) {
-    log.Error("send failed",
-        "notifiable", fmt.Sprintf("%T/%v", err.Notifiable, err.Notifiable),
-        "channel",    err.Channel,
-        "err",        err.Err,
+OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+    slog.Error("send failed",
+        "notifiable", n.GetID(),
+        "channel",    channel,
+        "err",        err,
     )
 }
 ```

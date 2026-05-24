@@ -3,86 +3,68 @@ title: Retry & Backoff
 description: Automatic retries with exponential backoff for transient failures.
 ---
 
-Transient failures are the norm for notification APIs — network blips, upstream 429s, connection resets. go-notification retries these automatically with exponential backoff.
+Transient failures are the norm for notification APIs — network blips, upstream 5xx, connection resets. go-notification retries these automatically with exponential backoff.
 
 ## Defaults
 
 ```go
 notification.New(notification.Config{
-    MaxRetries:    3,                // total attempts = 1 + 3 retries = 4
-    RetryDelay:    1 * time.Second,  // first retry waits 1s
-    RetryBackoff:  2.0,              // each subsequent retry doubles
-    RetryMaxDelay: 30 * time.Second, // cap on single wait
+    MaxRetries: 3,               // retries AFTER the first attempt → 4 attempts total
+    RetryDelay: 1 * time.Second, // base delay for exponential backoff
 })
 ```
 
-Default schedule:
+These are the only two retry knobs. Backoff is computed as `RetryDelay * 2^attempt`, **capped at 60 seconds**, with up to **25% jitter** added to avoid retry storms.
+
+Default schedule (`RetryDelay = 1s`, `MaxRetries = 3`):
+
 - Attempt 1 — fire immediately
-- Retry 1 — after 1s
-- Retry 2 — after 2s (1s × 2)
-- Retry 3 — after 4s (2s × 2)
-- Give up, call `OnError`
+- Retry 1 — after ~1s (+ jitter)
+- Retry 2 — after ~2s (+ jitter)
+- Retry 3 — after ~4s (+ jitter)
+- Give up → call `OnError`
+
+<Callout type="info">
+  `MaxRetries: 0` is treated as the default (3). To **disable** retries entirely,
+  set a negative value (e.g. `MaxRetries: -1`). `RetryDelay <= 0` defaults to 1s.
+</Callout>
 
 ## What gets retried
 
-The driver decides whether a failure is retryable. In general:
-
-- **Retryable:** network errors, 5xx responses, 429 rate-limit responses (with respect for `Retry-After` header), timeouts.
-- **Not retryable:** 4xx client errors (bad API key, bad recipient, invalid payload) — retrying won't help.
-
-Drivers can opt into more nuance. For example, FCM maps `UNREGISTERED` to non-retryable (the token is dead) and `UNAVAILABLE` to retryable.
-
-## Per-notification override
-
-Implement `ShouldRetry(err) bool` on your notification type to override:
+By default **every** error is retried until `MaxRetries` is reached. A driver opts a specific failure **out** of retry by returning an error that wraps `middleware.ErrPermanent`:
 
 ```go
-func (n OTP) ShouldRetry(err error) bool {
-    // OTPs are time-sensitive. If it's been more than 30s, don't retry.
-    return time.Since(n.CreatedAt) < 30*time.Second
+import "github.com/gopackx/go-notification/middleware"
+
+// Inside a driver's Send:
+if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+    return fmt.Errorf("provider rejected (%d): %w", resp.StatusCode, middleware.ErrPermanent)
 }
+return fmt.Errorf("provider upstream %d", resp.StatusCode) // retryable
 ```
 
-## Respecting `Retry-After`
-
-If an upstream returns 429 with a `Retry-After` header, the driver honors it — the next attempt waits at least that long, overriding the backoff schedule.
+So the convention is: 4xx client errors (bad API key, bad recipient, invalid payload) wrap `ErrPermanent` and stop immediately; network errors and 5xx are left plain and get retried. Context cancellation also stops retries early.
 
 ## Jitter
 
-Exponential backoff without jitter causes retry storms — every client hits the upstream at exactly the same moment after a blip. The built-in backoff adds **±20% jitter** by default. You can tune:
-
-```go
-notification.Config{
-    RetryJitter: 0.2, // 20%. Set to 0 to disable.
-}
-```
-
-## Rolling your own
-
-If you need a completely custom retry strategy, implement `RetryPolicy` and set it on the config:
-
-```go
-type myPolicy struct{}
-
-func (myPolicy) NextDelay(attempt int, err error) (time.Duration, bool) {
-    if !isRetryable(err) { return 0, false }
-    if attempt > 10      { return 0, false }
-    return time.Duration(attempt*attempt) * time.Second, true
-}
-
-notification.New(notification.Config{ RetryPolicy: myPolicy{} })
-```
+Exponential backoff without jitter causes retry storms — every client hits the upstream at the same instant after a blip. The built-in backoff adds up to **25% jitter** on each wait. This is automatic and not configurable.
 
 ## Observability
 
-Each retry fires a `OnRetry` callback (if set) so you can count them:
+Retries themselves aren't surfaced via a per-attempt callback. To observe failures, use `OnError` (fired once, after all retries are exhausted) and `OnSuccess`:
 
 ```go
 notification.New(notification.Config{
-    OnRetry: func(ctx context.Context, attempt int, err error) {
-        retryCounter.Add(1)
+    MaxRetries: 5,
+    OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+        failureCounter.Add(1)
+        slog.Error("delivery exhausted retries", "channel", channel, "id", n.GetID(), "err", err)
     },
 })
 ```
 
-Track retries as a metric; sustained retry spikes mean something upstream is degrading and you should investigate, not just absorb.
+Sustained `OnError` spikes mean something upstream is degrading — investigate rather than just absorbing.
+
+## Pairs with rate limiting
+
+Retry handles failures you didn't prevent; [rate limiting](/docs/features/rate-limiting) prevents many of them (avoiding 429s in the first place). The two features pair well.

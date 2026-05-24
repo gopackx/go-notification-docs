@@ -47,7 +47,7 @@ The session persists across restarts as long as you mount a volume for WAHA's da
 ```go
 import "github.com/gopackx/go-notification/channel/whatsapp/waha"
 
-notifier.RegisterChannel("whatsapp", waha.New(waha.Config{
+notifier.RegisterChannel(waha.New(waha.Config{
     BaseURL:   "http://localhost:3000",
     APIKey:    os.Getenv("WAHA_API_KEY"),
     SessionID: "default",
@@ -63,14 +63,14 @@ func (n OrderShipped) Via(u notification.Notifiable) []string {
 
 func (n OrderShipped) ToWhatsApp(u notification.Notifiable) *whatsapp.Message {
     return whatsapp.NewMessage().
-        Text("Hi, your order " + n.OrderID + " has shipped.")
+        SetText("Hi, your order " + n.OrderID + " has shipped.")
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) RouteNotificationFor(channel string) string {
     if channel == "whatsapp" {
         return u.Phone // E.164 format, e.g. "628123456789"
     }
-    return nil
+    return ""
 }
 ```
 

@@ -9,47 +9,60 @@ This walks through sending an email via Mailgun — but the same pattern applies
 
 ```go
 notifier := notification.New(notification.Config{
-    // defaults: async worker pool, retries, exponential backoff
+    // Zero value is valid: async worker pool (10 workers), 3 retries,
+    // 1s exponential backoff, slog.Default() logger.
 })
+defer notifier.Close()
 ```
+
+`Close()` takes no arguments. It shuts down the worker pool and waits for in-flight deliveries to finish, so always `defer` it.
 
 ## 2. Register a channel
 
-Each channel has a **name** (your choice) and a **driver** (a concrete implementation).
+A channel is a **driver** — a concrete implementation. Each driver reports its own name (via `Name()`), which is the string you list in `Via`. For mail drivers the default name is `"mail"`.
 
 ```go
-notifier.RegisterChannel("mail", mailgun.New(mailgun.Config{
+notifier.RegisterChannel(mailgun.New(mailgun.Config{
     Domain: "mg.example.com",
     APIKey: os.Getenv("MAILGUN_API_KEY"),
-    From:   "noreply@example.com",
+    From:   mail.Address{Name: "Acme", Address: "noreply@example.com"},
 }))
 ```
 
-You can register the same driver under multiple names (e.g. `mail-transactional` and `mail-marketing`) with different configs.
+`RegisterChannel` takes a single argument — the driver. The sender address is a `mail.Address` struct, not a plain string.
+
+<Callout type="info">
+  To register the same driver type twice (e.g. transactional vs. marketing
+  mail), give each one a distinct name through the driver's `ChannelName`
+  field, then reference those names in `Via`. See
+  [Channels Overview](/docs/channels/overview#multiple-instances-of-one-driver).
+</Callout>
 
 ## 3. Implement `Notifiable` on your user type
 
-`Notifiable` tells go-notification how to reach a given recipient:
+`Notifiable` tells go-notification how to identify and reach a recipient. It has **two** methods — `GetID()` and `RouteNotificationFor()` — both returning `string`:
 
 ```go
 type User struct {
-    ID    int64
+    ID    string
     Name  string
     Email string
 }
 
-func (u User) RouteNotificationFor(channel string) any {
+func (u User) GetID() string { return u.ID }
+
+func (u User) RouteNotificationFor(channel string) string {
     switch channel {
     case "mail":
         return u.Email
     }
-    return nil
+    return "" // empty string = skip this channel for this user
 }
 ```
 
 ## 4. Define a notification
 
-A notification is any struct that implements `Notification`:
+A notification is any struct that implements `Notification` (the `Via` method). For each channel it targets, add the matching `To<Channel>` method — `ToMail` returns a `*mail.Message`:
 
 ```go
 type OrderShipped struct {
@@ -62,20 +75,23 @@ func (n OrderShipped) Via(notifiable notification.Notifiable) []string {
 
 func (n OrderShipped) ToMail(notifiable notification.Notifiable) *mail.Message {
     return mail.NewMessage().
-        Subject("Your order has shipped").
-        Line("Hi, your order " + n.OrderID + " is on its way.").
+        SetSubject("Your order has shipped").
+        SetGreeting("Hi there!").
+        Line("Your order " + n.OrderID + " is on its way.").
         Action("Track package", "https://example.com/track/"+n.OrderID)
 }
 ```
 
+The builder uses `Set*` verbs (`SetSubject`, `SetGreeting`), plus `Line` and `Action` for the Laravel-style body.
+
 ## 5. Send it
 
 ```go
-user := User{ID: 1, Name: "Dani", Email: "dani@example.com"}
-notifier.Send(ctx, user, OrderShipped{OrderID: "A-1024"})
+user := User{ID: "1", Name: "Dani", Email: "dani@example.com"}
+notifier.Send(context.Background(), user, OrderShipped{OrderID: "A-1024"})
 ```
 
-That's the end-to-end loop. `Send()` returns immediately; dispatch runs on the worker pool.
+That's the end-to-end loop. With the default async config, `Send` returns immediately and dispatch runs on the worker pool — delivery errors surface through `Config.OnError`. Pass `notification.Sync()` to block until delivery completes.
 
 ## What to read next
 
