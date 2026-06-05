@@ -35,6 +35,22 @@ type Formatter interface {
 
 A channel may implement `Formatter` directly. The built-in channels do this through an embedded `Base` (e.g. `mail.Base`, `chat.Base`) that calls the notification's `ToMail`/`ToChat`/… method and returns `ErrNoFormatter` when the notification doesn't support that channel. If the channel doesn't implement `Formatter`, the notifier falls back to the notification's `ChannelFormatter`.
 
+<Callout type="info" title="Formatter vs ChannelFormatter">
+The two names look almost identical but live on opposite sides of the
+dispatch boundary:
+
+- **`Formatter`** (this page) — implemented by the **channel**. Built-in
+  drivers get it for free via embedded `Base`. Always the preferred path.
+- **`ChannelFormatter`** ([notification interface](/docs/api-reference/notification-interface#custom-channels-channelformatter))
+  — implemented by the **notification**, with signature
+  `Format(channel string, notifiable Notifiable) any`. The notifier only
+  consults it when the channel does **not** implement `Formatter`.
+
+Rule of thumb: define a real driver → implement `Formatter`. Add support
+for a custom channel without writing a driver → implement
+`ChannelFormatter` on the notification.
+</Callout>
+
 ## Minimal custom channel
 
 The simplest path is `channel.Func`, which wraps a send function — no struct required:

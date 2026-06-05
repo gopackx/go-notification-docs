@@ -63,7 +63,18 @@ notifier.RegisterChannel(mailgun.New(mailgun.Config{ /* ... */ }))
 
 ## Multiple instances of one driver
 
-`RegisterChannel` keys by `Name()`, so two drivers reporting the same name collide (the second replaces the first). To run more than one instance of a family — transactional vs. marketing mail, or Slack **and** Telegram (both default to `"chat"`) — give each a distinct name via its `Config.Name` field:
+<Callout type="warn" title="Silent overwrite if Config.Name is empty">
+`RegisterChannel` keys by the driver's `Name()`. Two drivers reporting the
+same name **silently overwrite** — the second wins, no error, no warning.
+
+The trap: Slack, Telegram, Discord, and Teams **all** default to `"chat"`.
+Registering more than one without setting `Config.Name` means only the last
+one is reachable. The same applies to two mail drivers (both `"mail"`),
+two SMS drivers (`"sms"`), etc. Always set a distinct `Config.Name` when
+registering more than one driver from the same family.
+</Callout>
+
+To run more than one instance of a family — transactional vs. marketing mail, or Slack **and** Telegram — give each a distinct name via its `Config.Name` field:
 
 ```go
 notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail_tx", /* ... */}))

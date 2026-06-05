@@ -28,7 +28,17 @@ func (n *Notifier) Close()
 func (n *Notifier) RegisterChannel(ch Channel)
 ```
 
-Registers a driver. The channel's identifier comes from its own `Name()` method — there is no name argument. Registering a second channel that reports the same name replaces the first. You reference the name from `Notification.Via()`.
+Registers a driver. The channel's identifier comes from its own `Name()` method — there is no name argument. You reference the name from `Notification.Via()`.
+
+<Callout type="warn" title="Silent overwrite on name collision">
+Registering a second channel that reports the same `Name()` **silently
+replaces** the first — no error, no warning. Each family has a default name
+(`"mail"`, `"sms"`, `"chat"`, `"whatsapp"`, `"push"`, `"webhook"`,
+`"database"`), and **Slack/Telegram/Discord/Teams all default to `"chat"`**.
+When registering two drivers from the same family — or any two chat
+providers — set a distinct `Config.Name` on each. See
+[Multiple instances of one driver](/docs/channels/overview#multiple-instances-of-one-driver).
+</Callout>
 
 ### Channel
 
@@ -86,7 +96,9 @@ type Config struct {
     QueueSize int
 
     // MaxRetries is the number of retries after the first attempt.
-    // Total attempts = 1 + MaxRetries. Negative disables retry. Default: 3.
+    // Total attempts = 1 + MaxRetries. Default: 3.
+    // Footgun: a zero value is treated as the default (3) — to actually
+    // disable retries, set a NEGATIVE value (e.g. -1).
     MaxRetries int
 
     // RetryDelay is the base delay for exponential backoff. Default: 1s.

@@ -13,6 +13,8 @@ Message types live under `github.com/gopackx/go-notification/channel/<family>`. 
 
 ## Mail
 
+The Laravel-style builder (`SetGreeting` / `Line` / `Action` / `SetSalutation`) auto-renders to a clean HTML template **and** a plain-text fallback at send time:
+
 ```go
 import "github.com/gopackx/go-notification/channel/mail"
 
@@ -22,7 +24,43 @@ mail.NewMessage().
     Line("Your order A-1024 is on its way.").
     Action("Track package", "https://...").      // renders as button
     Line("Thanks for shopping with us.").
-    SetSalutation("— The team").                 // optional
+    SetSalutation("— The team")                  // optional
+```
+
+### Sender, recipients, addressing
+
+`SetFrom`, `AddTo`, `AddCC`, `AddBCC`, and `AddReplyTo` each take an address plus an optional display name. You can call the `Add*` variants multiple times to build a list:
+
+```go
+mail.NewMessage().
+    SetFrom("noreply@example.com", "Example").
+    AddTo("dani@example.com", "Dani").
+    AddCC("ops@example.com").
+    AddBCC("audit@example.com").
+    AddReplyTo("support@example.com", "Support")
+```
+
+If you don't set `To`, the channel falls back to `RouteNotificationFor("mail")`.
+
+### Raw HTML and plain text
+
+For full control, set the body directly. Provide both `SetText` and `SetHTML` so clients that prefer plain text get a usable version:
+
+```go
+mail.NewMessage().
+    SetSubject("Welcome").
+    SetText("Welcome — open https://app.example.com/dashboard to get started.").
+    SetHTML(renderedHTML)
+```
+
+See [Email Templates](/docs/features/templates) for `mail.TemplateRenderer` (renders a Go `html/template` into `Message.HTML`).
+
+### Attachments
+
+`Attach` takes a single `mail.Attachment` struct, not three positional args:
+
+```go
+mail.NewMessage().
     Attach(mail.Attachment{
         Filename:    "invoice.pdf",
         ContentType: "application/pdf",
@@ -30,20 +68,42 @@ mail.NewMessage().
     })
 ```
 
-You can also set the body directly with `SetText` / `SetHTML` instead of the
-`Line`/`Action` builder, and refine delivery with `SetFrom`, `AddTo`,
-`SetPriority`, `AddHeader`, and `AddTag`:
+For inline images (CID references in HTML), set `Inline` and `ContentID`:
 
 ```go
 mail.NewMessage().
-    SetFrom("noreply@example.com", "Example").
-    AddTo(user.Email, user.Name).
-    SetSubject("Welcome").
-    SetHTML(renderedHTML).
-    SetPriority(mail.PriorityHigh)
+    SetHTML(`<p>Logo: <img src="cid:logo"></p>`).
+    Attach(mail.Attachment{
+        Filename:    "logo.png",
+        ContentType: "image/png",
+        Data:        logoBytes,
+        Inline:      true,
+        ContentID:   "logo",
+    })
 ```
 
-See [Email Templates](/docs/features/templates) for template setup.
+### Priority
+
+`SetPriority` accepts one of three constants — providers that support priority (Mailgun, SendGrid, …) map them to their headers; others ignore the value:
+
+```go
+mail.NewMessage().SetPriority(mail.PriorityHigh)
+// mail.PriorityNormal (default), mail.PriorityHigh, mail.PriorityLow
+```
+
+### Headers, tags, metadata
+
+For provider-side analytics, suppression lists, and routing:
+
+```go
+mail.NewMessage().
+    AddHeader("X-Campaign-ID", campaignID).   // raw SMTP/HTTP header
+    AddTag("welcome", "onboarding").           // appears in Mailgun/SendGrid analytics
+    SetMetadata("user_id", userID).            // key/value provider metadata
+    SetMetadata("plan", "pro")
+```
+
+`AddTag` is variadic — pass several tags in one call. `SetMetadata` is key-by-key. Both are best-effort: drivers only forward what their provider supports.
 
 ## WhatsApp
 

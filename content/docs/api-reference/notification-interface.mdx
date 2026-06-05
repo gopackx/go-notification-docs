@@ -57,13 +57,21 @@ You only implement the ones listed in your `Via()`. If `Via` returns `[]string{"
 
 ## Custom channels: `ChannelFormatter`
 
-For channels beyond the built-in ones, implement the optional `ChannelFormatter` interface. The notifier calls it only when no per-channel interface matches:
+For channels beyond the built-in ones, implement the optional `ChannelFormatter` interface on the **notification**. The notifier calls it only when the channel doesn't implement `Formatter`:
 
 ```go
 type ChannelFormatter interface {
     Format(channel string, notifiable Notifiable) any
 }
 ```
+
+<Callout type="info" title="Not the same as Formatter">
+Don't confuse this with [`Formatter`](/docs/api-reference/channel-interface#how-a-notification-becomes-a-message-formatter)
+on the channel side. `Formatter` (`Format(n, notifiable) (any, error)`)
+lives on the channel and is how every built-in driver works.
+`ChannelFormatter` lives on the **notification** and is a fallback used
+only when the channel doesn't implement its own `Formatter`.
+</Callout>
 
 See [Writing a Custom Channel](/docs/guides/custom-channel).
 

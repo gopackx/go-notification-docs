@@ -59,12 +59,28 @@ This is useful when notifications cluster (e.g. end-of-day digest fan-out).
 
 ## What happens at the limit
 
-When the bucket is empty:
+The limiter **blocks, it does not drop**. When the bucket is empty:
 
-- **Async mode** — workers block, queue fills up. If queue fills, `Send()` blocks upstream.
-- **Sync mode** — `Send()` blocks until tokens are available.
+- **Async mode** — a worker calling the channel blocks inside `Acquire`, holding its slot. As more sends accumulate, the queue fills and `Send` blocks upstream. This is intentional backpressure.
+- **Sync mode** — `Send` blocks until a token is available.
 
-Neither drops messages silently. If that's what you need, put a real queue in front and set the notifier's queue to small and non-blocking.
+The only way `Acquire` returns an error is **context cancellation**. In that case it returns `errors.Join(middleware.ErrRateLimitTimeout, ctx.Err())` — surfacing in your `OnError` for that channel. Use a per-call context with a deadline if "wait up to N seconds, then fail" is the behavior you want:
+
+```go
+ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+defer cancel()
+notifier.Send(ctx, user, n) // OnError fires with ErrRateLimitTimeout if no token in 2s
+```
+
+<Callout type="info" title="`notification.ErrRateLimited` vs `middleware.ErrRateLimitTimeout`">
+The package exports `notification.ErrRateLimited` for callers that want a
+named sentinel, but the built-in token-bucket limiter only ever returns
+`middleware.ErrRateLimitTimeout` (joined with `ctx.Err()`). If you need
+to detect "rate-limited" failures via `errors.Is`, match against
+`middleware.ErrRateLimitTimeout`.
+</Callout>
+
+If you actually want to **drop** when over-budget, put a real queue (Redis Streams, NATS, SQS) in front and reject at the edge — go-notification itself won't drop.
 
 ## Per-tenant rate limiting
 

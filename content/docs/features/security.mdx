@@ -3,9 +3,17 @@ title: Security & Redaction
 description: API keys stay out of logs. Drivers use raw HTTP with no third-party SDKs.
 ---
 
+<Callout type="warn" title="Redaction is opt-in, not automatic">
+go-notification does **not** auto-redact via struct tags or a custom
+`String()`. If you log a `Config`, an error message, or a request URL
+that embeds credentials, the secret **will** appear in plain text.
+Wrap anything you log around the library through `middleware.Redact` /
+`middleware.RedactAttr` (see below). Never log a whole config struct.
+</Callout>
+
 go-notification is built around two security defaults:
 
-1. **No secrets logged** — the library never logs your API keys, and ships a helper to scrub secrets from anything you log yourself.
+1. **No secrets logged by the library itself** — the notifier's own logging never prints your API keys. But anything you log around it is your responsibility — use the helper below.
 2. **Zero third-party SDKs** — every driver uses `net/http` directly.
 
 ## Redaction helper
