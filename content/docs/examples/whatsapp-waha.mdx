@@ -115,8 +115,10 @@ func main() {
 
 ```bash
 export WAHA_API_KEY=your-key # set in WAHA dashboard if enabled
-go run .
+cd _examples && go run ./whatsapp-waha
 ```
+
+The examples are a separate Go module inside the repository (`_examples/`), so run them from that directory. If you pasted the code into your own module, `go run .` works as usual.
 
 Message appears in the WhatsApp conversation within a few seconds.
 

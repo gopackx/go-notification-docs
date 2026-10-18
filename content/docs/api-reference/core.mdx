@@ -64,6 +64,12 @@ func (n *Notifier) Send(ctx context.Context, notifiable Notifiable, notif Notifi
 
 Dispatches a notification to one recipient on every channel returned by `notif.Via(notifiable)` (unless overridden with the `Via` option). In async mode (default) it returns `nil` immediately after dispatching, and delivery errors surface via `Config.OnError`. In sync mode it blocks until every channel completes and returns the joined errors. After `Close()`, it returns `ErrClosed`.
 
+**Context.** The async job runs on `context.WithoutCancel(ctx)`: it keeps the values stored in `ctx` (trace IDs, loggers) but ignores its deadline and cancellation, so a request-scoped `ctx` cancelled after `Send` returns does not abort the delivery or its retries. In sync mode — `Config.Async = false` or the `notification.Sync()` option — delivery runs on the caller's `ctx` and honours cancellation. See [Context and cancellation](/docs/features/async#context-and-cancellation).
+
+**Closed concurrently.** If `Close()` runs while `Send` is enqueuing and a job is rejected, `Send` still returns `nil`, but the notifier logs a warning and fires `OnError` with `ErrClosed` for that channel rather than dropping the notification silently.
+
+**Empty route.** When `notifiable.RouteNotificationFor(channel)` returns `""`, that channel is skipped for the recipient with a debug log only; `OnError` is not fired.
+
 ### SendMulti
 
 ```go
@@ -160,6 +166,13 @@ var (
     ErrRetriesExceeded = errors.New("notification: max retries exceeded")
 )
 ```
+
+How the notifier treats them:
+
+- **`ErrNoRoute`** — an empty route from `RouteNotificationFor` skips the channel silently for that notifiable (debug log, no `OnError`). A driver's `Send` returning `ErrNoRoute` is handled the same way and is never retried.
+- **`ErrInvalidMessage`** and **`ErrNoFormatter`** returned by a driver's `Send` are not retried — retrying cannot fix a wrong message type or a missing `To<Channel>()` method. `ErrInvalidMessage` fires `OnError` once; because the notifier wraps it in `middleware.ErrPermanent`, its message ends with `: permanent error`. `errors.Is(err, notification.ErrInvalidMessage)` still matches.
+- **`ErrClosed`** — returned by `Send` after `Close()`, and passed to `OnError` when a job is rejected because the notifier was closed concurrently.
+- Everything else (provider errors, network errors, `ErrRateLimited` from a limiter) goes through the retry schedule unless the driver wraps it in `middleware.ErrPermanent`. See [Retry & Backoff](/docs/features/retry).
 
 ## Recommended singleton pattern
 

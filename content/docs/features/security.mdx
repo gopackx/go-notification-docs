@@ -43,6 +43,25 @@ slog.Info("calling provider", middleware.RedactAttr("url", requestURL))
 
 The notifier's own logging never prints credentials. When you log around the library — request URLs, headers, error strings that may embed a key — run the value through `middleware.Redact`/`RedactAttr` first. That covers the common leak vectors (bearer tokens, `api_key`/`token`/`password` pairs).
 
+## What the library redacts for you
+
+Since v1.0.1 every HTTP driver sanitises its own error values before they reach the logger or `OnError`:
+
+- **Request URL** — only the scheme and host survive (`https://api.telegram.org`). Path, query string and userinfo are dropped, so a Telegram bot token embedded in the path, or a Slack/Discord/Teams webhook URL, never appears in an error message.
+- **Response body** — the snippet of the provider's response that is embedded in the error passes through `middleware.Redact`.
+- **Webhook URL parse errors** — the webhook driver redacts the URL in parse failures too, since Go's `url.Parse` error echoes its input.
+
+So an `OnError` callback that logs `err` as-is is safe for the library's own errors:
+
+```go
+OnError: func(ctx context.Context, n notification.Notifiable, channel string, err error) {
+    // err reads like: telegram: http 401 https://api.telegram.org: {"ok":false,"description":"Unauthorized"}
+    slog.Error("send failed", "channel", channel, "err", err)
+},
+```
+
+This does **not** change the rule above. Anything *you* log — the config, the URL you built, a request you dumped — still has to go through `middleware.Redact` yourself.
+
 ## Zero SDK dependencies
 
 Every driver uses `net/http`. No Twilio Go SDK, no AWS SDK, no SendGrid client library.
@@ -70,4 +89,4 @@ Every HTTP driver talks HTTPS using Go's default transport and the system CA bun
 
 ## Reporting a vulnerability
 
-Email the maintainer directly (not a public issue) per the **SECURITY.md** in the repo. Don't disclose publicly until a fix ships.
+Contact the maintainer privately — by email, or through the GitHub repository's issue tracker at [github.com/gopackx/go-notification](https://github.com/gopackx/go-notification) with the details withheld until you're in touch. Don't disclose publicly until a fix ships.

@@ -43,7 +43,26 @@ if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 return fmt.Errorf("provider upstream %d", resp.StatusCode) // retryable
 ```
 
-So the convention is: 4xx client errors (bad API key, bad recipient, invalid payload) wrap `ErrPermanent` and stop immediately; network errors and 5xx are left plain and get retried. Context cancellation also stops retries early.
+So the convention for HTTP drivers is: 4xx client errors (bad API key, bad recipient, invalid payload) wrap `ErrPermanent` and stop immediately; network errors and 5xx are left plain and get retried. The built-in HTTP drivers still retry `408`, `425` and `429`, since those are transient by definition.
+
+<Callout type="info" title="SMTP reads the other way round">
+  SMTP reply codes don't follow the HTTP convention. The SMTP driver treats
+  **5xx** replies (mailbox unavailable, auth rejected) as permanent and
+  **4xx** replies (service busy, greylisting) as transient, so 4xx is retried
+  and 5xx is not. See [SMTP](/docs/channels/email/smtp#timeouts-and-retries).
+</Callout>
+
+### Errors that are never retried
+
+Three of the library's own sentinel errors are never retried when a driver's `Send` returns them, because retrying cannot fix them:
+
+- `ErrNoRoute` — the notifiable has no address for this channel. The channel is skipped silently (debug log only; no `OnError`). The same happens earlier, before any attempt, when `RouteNotificationFor` returns `""`.
+- `ErrInvalidMessage` — the driver received a message type it doesn't handle (for example a `*chat.Message` passed to a mail driver). `OnError` fires **once**, and the error message ends with `: permanent error` because the notifier wraps it in `middleware.ErrPermanent`. `errors.Is(err, notification.ErrInvalidMessage)` still matches.
+- `ErrNoFormatter` — the notification has no `To<Channel>()` method for this channel. Skipped with a debug log.
+
+### Context cancellation
+
+A cancelled context stops the retry loop early. In async mode (the default) the worker runs on `context.WithoutCancel(ctx)`, so the *caller's* cancellation does not reach it — only the driver's own timeouts apply. In sync mode (`Async: false` or `notification.Sync()`) the caller's `ctx` is used directly and cancelling it abandons the remaining retries. See [Context and cancellation](/docs/features/async#context-and-cancellation).
 
 ## Jitter
 

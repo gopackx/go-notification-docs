@@ -7,6 +7,33 @@ All notable changes to **go-notification** are listed here. The format follows [
 
 ---
 
+## v1.0.1 — Bug fixes and hardening
+
+A patch release. No API changes; a few behaviours were corrected, and the error values the HTTP drivers produce are now safe to log.
+
+### Fixed
+- **Async `Send` no longer inherits the caller's cancellation.** The background job runs on `context.WithoutCancel(ctx)`: it keeps the context values (trace IDs, loggers) but ignores the deadline and cancellation. A request-scoped context cancelled right after `Send` returns no longer aborts the delivery or its retries. Use `notification.Sync()` when cancellation must apply. See [Async & Worker Pool](/docs/features/async#context-and-cancellation).
+- **Closed-notifier race is reported.** A `Send` whose job is rejected because the notifier was closed concurrently now fires `OnError` with `ErrClosed` and logs a warning, instead of being dropped silently.
+- **Mail drivers route on their custom name.** A mail driver registered with `Name: "mail_tx"` now calls `RouteNotificationFor("mail_tx")`, not `"mail"`. Notifiables must handle the custom name. See [Email Overview](/docs/channels/email/overview#running-two-mail-drivers).
+- **SMTP `Config.Timeout` bounds the whole session** — connect, TLS handshake, and every command through `QUIT` — not just the dial. Implicit-TLS (port 465) dialing respects `ctx`.
+- **SMTP MIME structure.** A mail with text, HTML **and** attachments is now well-formed nested MIME: `multipart/mixed` containing a `multipart/alternative` part.
+- **SMTP reply classification.** 5xx replies are permanent and stop retries; 4xx replies are transient and retried.
+
+### Changed
+- **Empty route skips silently.** When `RouteNotificationFor` returns `""`, the channel is skipped for that notifiable with a debug log only. Previously the format path fired `OnError` with `ErrNoRoute`.
+- **Library sentinels are not retried.** `ErrNoRoute`, `ErrInvalidMessage` and `ErrNoFormatter` returned by a driver's `Send` are no longer retried. `ErrInvalidMessage` fires `OnError` once, and its message ends with `: permanent error`. See [Retry & Backoff](/docs/features/retry#what-gets-retried).
+- **Examples are a separate Go module.** The runnable programs under `_examples/` have their own `go.mod`, so the library itself keeps zero third-party dependencies. The database examples import the cgo-free `modernc.org/sqlite` driver. Run them with `cd _examples && go run ./basic` (and `./multi-channel`, `./whatsapp-waha`, `./email-api`, `./full-example`).
+- **Full example.** Slack and Telegram are registered with `Name: "slack"` / `Name: "telegram"`, and a `LoginOTP` SMS notification is sent with `notification.Sync()`.
+
+### Security
+- **HTTP driver errors no longer echo credentials.** Errors that are logged and passed to `OnError` contain only the scheme and host of the request URL — never the path, query or userinfo. Telegram bot tokens and Slack/Discord/Teams webhook URLs no longer leak through error messages.
+- **Response bodies are redacted.** The response snippet embedded in an HTTP error passes through `middleware.Redact`.
+- **Webhook URL parse errors are redacted** as well.
+
+See [Security & Redaction](/docs/features/security#what-the-library-redacts-for-you). Redaction of your *own* logging is still opt-in.
+
+---
+
 ## v1.0.0 — First public release
 
 ### Core

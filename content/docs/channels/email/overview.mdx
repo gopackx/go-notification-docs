@@ -58,6 +58,35 @@ func (n OrderShipped) ToMail(u notification.Notifiable) *mail.Message {
 }
 ```
 
+## Running two mail drivers
+
+Every mail driver defaults to the name `"mail"`, and `RegisterChannel` keys on that name — registering a second mail driver without a custom name silently replaces the first. To run transactional and marketing mail side by side, give each a distinct `Name` and route on it:
+
+```go
+notifier.RegisterChannel(postmark.New(postmark.Config{Name: "mail_tx", /* ... */}))
+notifier.RegisterChannel(mailgun.New(mailgun.Config{Name: "mail_mk", /* ... */}))
+
+func (n Receipt) Via(notification.Notifiable) []string { return []string{"mail_tx"} }
+func (n Promo) Via(notification.Notifiable) []string   { return []string{"mail_mk"} }
+
+func (u User) RouteNotificationFor(channel string) string {
+    switch channel {
+    case "mail_tx", "mail_mk":
+        return u.Email
+    }
+    return ""
+}
+```
+
+<Callout type="info" title="Custom names reach RouteNotificationFor since v1.0.1">
+A mail driver with a custom `Name` now calls `RouteNotificationFor` with that
+name — `"mail_tx"`, not `"mail"`. A notifiable that only answers to `"mail"`
+returns `""` for the custom channel, and the channel is skipped silently for
+that recipient. Handle the custom name explicitly, as above.
+</Callout>
+
+See [Multiple instances of one driver](/docs/channels/overview#multiple-instances-of-one-driver) for the same pattern across families.
+
 ## Choosing a driver
 
 The short version:

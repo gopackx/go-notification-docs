@@ -22,12 +22,21 @@ go test ./...
 
 Tests should pass out of the box. If they don't, open an issue — that itself is a bug.
 
+The runnable examples under `_examples/` are a **separate Go module**, so `go test ./...` from the root doesn't build them. Check them separately:
+
+```bash
+cd _examples && go vet ./...
+```
+
+Keeping the examples in their own module is deliberate: the library's `go.mod` has no third-party requirements, while the database examples need the cgo-free `modernc.org/sqlite` driver. Run an example with `cd _examples && go run ./basic`.
+
 ## Conventions
 
 - **Drivers go under `channel/<family>/<provider>`** — e.g., `channel/mail/sendgrid`.
 - **Message builders live with their family** — e.g., `channel/chat/message.go`, `channel/mail/message.go`.
 - **Raw HTTP only.** Do not introduce third-party SDKs. See [Security & Redaction](/docs/features/security) for why.
-- **Redact secrets in logs** with `middleware.Redact` / `middleware.RedactAttr`. Never log raw API keys or tokens.
+- **No third-party dependencies in the library module.** Anything that needs one (a SQLite driver, a demo web framework) belongs in the `_examples/` module.
+- **Redact secrets in logs and errors** with `middleware.Redact` / `middleware.RedactAttr`. Never log raw API keys or tokens. Error values must not echo the request URL beyond its scheme and host — Telegram puts the bot token in the path, Slack/Discord/Teams put the secret in the webhook URL — and any response body embedded in an error must go through `middleware.Redact`.
 - **Use `context.Context` everywhere.** Cancellation and deadlines are part of the contract.
 - **No global state.** No `init()` side effects. Channels are constructed, not registered-at-import.
 
@@ -38,7 +47,7 @@ A good new-driver PR includes:
 1. The channel implementation, following the pattern in `channel/mail/mailgun` (or any existing driver).
 2. Config struct that keeps secrets out of logs (redact via `middleware.Redact` when logging).
 3. A message type if the channel family doesn't already have one.
-4. Unit tests with `httptest.NewServer` covering: happy path, 4xx error, 5xx retryable error, timeout.
+4. Unit tests with `httptest.NewServer` covering: happy path, 4xx permanent error, 5xx retryable error, timeout, and an assertion that the error string does not contain the request path, query or response secrets.
 5. A documentation page under `content/docs/channels/<family>/<provider>.mdx` in the docs repo.
 6. An entry in the channel overview's comparison table.
 
@@ -58,7 +67,7 @@ The docs site is **Next.js + Fumadocs** — see the docs repo for contribution d
 
 1. Fork, create a branch.
 2. Write code and tests.
-3. Run `go test ./...`, `go vet ./...`, and `gofmt -s -w .`.
+3. Run `go test ./...`, `go vet ./...`, and `gofmt -s -w .` — plus `cd _examples && go vet ./...` if you touched an example.
 4. Push, open a PR with:
    - What it does.
    - Why (link the issue).
@@ -75,7 +84,7 @@ Be kind. Assume good intent. Disagreements are about the code, not the person. V
 
 ## Reporting security issues
 
-**Don't open a public issue for security vulnerabilities.** Email the maintainer directly (address in `SECURITY.md` of the repo). We'll respond within 48h.
+**Don't open a public issue for security vulnerabilities.** Contact the maintainer privately — by email, or through the GitHub repository with the details withheld until you're in touch. We'll respond within 48h.
 
 ## License
 

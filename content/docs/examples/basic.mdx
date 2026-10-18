@@ -5,6 +5,13 @@ description: A complete, runnable program that sends one email via Mailgun.
 
 This is the smallest useful program — no frameworks, no extras. Drop it into `main.go`, set one env var, and it runs.
 
+<Callout type="info" title="Examples live in their own Go module">
+  The runnable version of this program is in `_examples/basic` of the
+  repository. The `_examples/` directory is a **separate Go module**, so the
+  library itself keeps zero third-party dependencies. Run it from there:
+  `cd _examples && go run ./basic`.
+</Callout>
+
 ## main.go
 
 ```go
@@ -79,10 +86,14 @@ func main() {
 
 ## Run it
 
+From a clone of the repository:
+
 ```bash
 export MAILGUN_API_KEY=key-xxxx
-go run .
+cd _examples && go run ./basic
 ```
+
+Or, if you pasted the code into your own module, `go run .` in that directory.
 
 ## What's happening
 

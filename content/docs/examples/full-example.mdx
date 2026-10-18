@@ -10,6 +10,14 @@ This brings together everything. A small e-commerce backend that uses go-notific
 - **Admin alerts** — new signup, payment failure.
 - **In-app** — every event is also stored in the database channel.
 
+<Callout type="info" title="Runnable version">
+  A compact version of this program ships in `_examples/full-example` of the
+  repository. The examples are a **separate Go module**, so run it with
+  `cd _examples && go run ./full-example`. It uses SMTP for mail and an
+  in-memory SQLite database (via the cgo-free `modernc.org/sqlite` driver) so
+  it needs no database server; see [Run it](#run-it) below.
+</Callout>
+
 ## Domain types
 
 ```go
@@ -52,7 +60,7 @@ func (a Admin) RouteNotificationFor(channel string) string {
     switch channel {
     case "mail":
         return a.Email
-    case "chat":
+    case "slack": // the Slack driver is registered with Name: "slack"
         return a.Slack
     case "database":
         return a.GetID()
@@ -60,6 +68,13 @@ func (a Admin) RouteNotificationFor(channel string) string {
     return ""
 }
 ```
+
+<Callout type="warn" title="Route on the registered name">
+Slack and Telegram both default to the channel name `"chat"`, so the boot
+code below registers them as `"slack"` and `"telegram"`. `RouteNotificationFor`
+and `Via()` must use those names — a `case "chat"` would return `""` and the
+channel would be skipped silently.
+</Callout>
 
 ## Notifications
 
@@ -125,7 +140,7 @@ type PaymentFailed struct {
 }
 
 func (n PaymentFailed) Via(_ notification.Notifiable) []string {
-    return []string{"chat", "database", "mail"}
+    return []string{"slack", "database", "mail"}
 }
 
 func (n PaymentFailed) ToChat(_ notification.Notifiable) *chat.Message {
@@ -212,9 +227,17 @@ func NewNotifier(db *sql.DB, env string) *notification.Notifier {
     }
     n.RegisterChannel(pushDriver)
 
-    // Ops chat — Slack incoming webhook
+    // Ops chat — Slack incoming webhook and a Telegram bot. Both default to
+    // the name "chat"; give each its own name so the second doesn't replace
+    // the first and Via() can address them separately.
     n.RegisterChannel(slack.New(slack.Config{
+        Name:       "slack",
         WebhookURL: os.Getenv("OPS_SLACK_WEBHOOK"),
+    }))
+    n.RegisterChannel(telegram.New(telegram.Config{
+        Name:          "telegram",
+        BotToken:      os.Getenv("TELEGRAM_TOKEN"),
+        DefaultChatID: os.Getenv("TELEGRAM_CHAT"),
     }))
 
     // Database — in-app notifications
@@ -241,10 +264,13 @@ func (s *OrderService) markShipped(ctx context.Context, o *Order) error {
     return nil
 }
 
-// In the auth service
+// In the auth service. The OTP is time-sensitive, so this call is forced
+// synchronous: Send blocks until Twilio accepts the message and the error
+// comes back to the caller instead of OnError. Sync() also means the
+// request's ctx cancellation applies to the delivery.
 func (s *AuthService) requestOTP(ctx context.Context, c Customer) error {
     code := s.generateOTP(c.ID)
-    return s.notifier.Send(ctx, c, LoginOTP{Code: code})
+    return s.notifier.Send(ctx, c, LoginOTP{Code: code}, notification.Sync())
 }
 
 // In the payment service
@@ -278,4 +304,21 @@ With ~200 lines of notification code, this app now has:
 - Retries + rate limits + secret redaction for free.
 - A dev/prod split where dev never hits real customers.
 
-And if tomorrow you want to add Telegram, it's three lines: register the Telegram driver, add a `ToChat()` method to the notifications (Slack, Telegram, Discord, and Teams all share `*chat.Message`), and add `"telegram"` to `Via()`.
+Telegram is already registered as `"telegram"`; to send an alert there too, add it to `Via()` — Slack, Telegram, Discord, and Teams all share `*chat.Message`, so the existing `ToChat()` method serves both. Give each a route in `RouteNotificationFor` (a chat ID for Telegram) and you're done.
+
+## Run it
+
+The repository version lives in `_examples/full-example`. The examples form a separate Go module so the library keeps zero third-party dependencies; the SQLite driver (`modernc.org/sqlite`, cgo-free) is a dependency of that module only.
+
+```bash
+export SMTP_HOST=smtp.example.com SMTP_USER=user SMTP_PASS=secret
+export TWILIO_SID=ACxxx TWILIO_TOKEN=xxx TWILIO_FROM=+14155238886
+export WAHA_API_KEY=xxx
+export SLACK_WEBHOOK=https://hooks.slack.com/services/...
+export TELEGRAM_TOKEN=123:abc TELEGRAM_CHAT=-100123
+export FCM_SA_JSON=/path/to/service-account.json   # optional
+
+cd _examples && go run ./full-example
+```
+
+The repository version differs from the listing above in a few ways: it uses the SMTP driver for mail, stores in-app notifications in an in-memory SQLite database, and sends three notifications — a `PaymentSucceeded` to the user (mail, WhatsApp, database, push), a `LoginOTP` over SMS with `notification.Sync()`, and a `ServerAlert` routed to `"slack"` and `"telegram"`.

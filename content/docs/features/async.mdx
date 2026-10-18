@@ -23,6 +23,33 @@ notifier := notification.New(notification.Config{
 
 On `Send()`, each `(channel, notification, notifiable)` triple is pushed onto an internal queue. A fixed pool of worker goroutines pulls from the queue and invokes the channel's `Send()`.
 
+## Context and cancellation
+
+The `ctx` you pass to `Send()` is **not** the context the worker runs on. In async mode the job uses `context.WithoutCancel(ctx)`: it keeps every value stored in `ctx` (trace IDs, request-scoped loggers) but ignores the deadline and cancellation.
+
+This matters in HTTP handlers. The request context is cancelled the moment the handler returns, which is usually long before the delivery and its retries finish. Before v1.0.1 that cancellation aborted the in-flight send; since v1.0.1 it does not.
+
+```go
+func (h *Handler) ship(w http.ResponseWriter, r *http.Request) {
+    // r.Context() is cancelled when this handler returns.
+    // The async delivery keeps running regardless.
+    h.notifier.Send(r.Context(), user, OrderShipped{...})
+    w.WriteHeader(http.StatusAccepted)
+}
+```
+
+When cancellation **must** apply — an OTP that is useless once the request has timed out — force that call synchronous with `notification.Sync()`. In sync mode `Send` runs on the caller's `ctx`, and a cancelled context stops the delivery and any remaining retries:
+
+```go
+err := h.notifier.Send(r.Context(), user, LoginOTP{Code: code}, notification.Sync())
+```
+
+<Callout type="info">
+  A detached async job cannot hang forever: every driver bounds its own
+  requests with the `Timeout` you configure (HTTP client timeout, or the whole
+  SMTP session for the SMTP driver).
+</Callout>
+
 ## Configuration
 
 | Field        | Type    | Default          | Description                                                       |
@@ -63,6 +90,8 @@ defer notifier.Close()
 
 `Close()` takes no arguments and returns nothing. It closes the queue and **waits** for all in-flight sends to finish before returning. It's idempotent, and any `Send` after `Close` returns `ErrClosed`.
 
+If `Close()` races with a `Send()` that already passed the closed check, the job can no longer be enqueued. Since v1.0.1 the notifier logs a warning and fires `OnError` with `ErrClosed` for each affected channel instead of dropping the notification silently — so no delivery disappears without a trace. `Send` itself still returns `nil` in that case, because it has already handed off to the pool.
+
 ## What if the queue fills up?
 
 If `QueueSize` is reached and `Send()` tries to enqueue more, it **blocks** until a worker frees a slot — natural backpressure. For truly burst-heavy workloads, increase `WorkerPool`/`QueueSize` or spill to a real queue (Redis, NATS, SQS) in front of go-notification.
@@ -83,6 +112,6 @@ notification.New(notification.Config{
 })
 ```
 
-`OnError` fires after all retries for a channel are exhausted. There's a matching `OnSuccess(ctx, n, channel)` for delivery confirmations.
+`OnError` fires after all retries for a channel are exhausted, and also for a job rejected because the notifier was closed concurrently (`errors.Is(err, notification.ErrClosed)`). It does **not** fire when `RouteNotificationFor` returns `""` — that channel is skipped silently for the recipient. There's a matching `OnSuccess(ctx, n, channel)` for delivery confirmations.
 
 See also: [Retry & Backoff](/docs/features/retry), [Rate Limiting](/docs/features/rate-limiting).

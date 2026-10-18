@@ -62,12 +62,14 @@ The route string is interpreted by the receiving driver:
   The channel name passed to `RouteNotificationFor` is the driver's `Name()`,
   not the provider. By default chat drivers report `"chat"`, mail drivers
   `"mail"`, etc. If you register a driver under a custom name (via its
-  `ChannelName`/`Name` config field), route on that same string.
+  `ChannelName`/`Name` config field), route on that same string. Since
+  v1.0.1 this holds for mail drivers too: a driver registered as
+  `Name: "mail_tx"` calls `RouteNotificationFor("mail_tx")`, not `"mail"`.
 </Callout>
 
 ## Returning an empty string
 
-If the recipient can't receive on a channel, return `""`. The channel is skipped for that recipient and dispatch moves on.
+If the recipient can't receive on a channel, return `""`. The channel is skipped for that recipient and dispatch moves on — silently. The notifier writes a debug-level log line and does **not** fire `OnError` or count it as a failure. (Before v1.0.1 the format path reported this through `OnError` with `ErrNoRoute`; an empty route is a routing decision, not an error.)
 
 ```go
 func (u User) RouteNotificationFor(channel string) string {

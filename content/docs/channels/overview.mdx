@@ -99,6 +99,15 @@ func (u User) RouteNotificationFor(channel string) string {
 }
 ```
 
+<Callout type="info" title="Mail drivers route on their custom name (v1.0.1)">
+A mail driver registered as `Name: "mail_tx"` calls
+`RouteNotificationFor("mail_tx")`. In v1.0.0 mail drivers always asked for
+`"mail"` regardless of the configured name, so a notifiable that only handled
+`"mail"` kept working by accident. On v1.0.1 the notifiable must handle the
+custom name, as in the example above — a `case "mail"` alone returns `""` for
+`"mail_tx"` and the channel is skipped silently for that recipient.
+</Callout>
+
 ## Decision guides
 
 Picking the right provider matters more than the code you write around it. Dedicated guides:

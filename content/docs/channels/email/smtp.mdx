@@ -66,12 +66,29 @@ Gmail won't accept your regular password for SMTP. You need an **app password**:
 | `From`      | `mail.Address` | yes | Default sender. A struct: `mail.Address{Name, Address}`.             |
 | `TLS`       | `bool`   | no       | Implicit TLS (port 465). Leave `false` for STARTTLS on 587.          |
 | `InsecureSkipVerify` | `bool` | no | Disable TLS cert verification. Never use in production.             |
-| `Timeout`   | `time.Duration` | no | Connect + handshake timeout. Default: `30s`.                        |
+| `Timeout`   | `time.Duration` | no | Bounds the whole SMTP session — connect, TLS, every command through `QUIT`. Default: `30s`. |
 | `Name`      | `string` | no       | Override the channel name (default `"mail"`).                        |
+
+## Timeouts and retries
+
+- **`Timeout` bounds the entire session**, not just the TCP dial: connect, TLS handshake (implicit or STARTTLS), `EHLO`, `AUTH`, `MAIL FROM`, `RCPT TO`, `DATA` and `QUIT`. A server that accepts the connection and then stalls cannot hold a worker indefinitely. If the `ctx` deadline is earlier, it wins. With implicit TLS (`TLS: true`) the dial honours `ctx` cancellation as well.
+- **5xx replies are permanent.** `550 mailbox unavailable`, `535 authentication failed` and friends are wrapped in `middleware.ErrPermanent`: the notifier does not retry them and fires `OnError` right away.
+- **4xx replies are transient.** `421 service not available`, `450 mailbox busy`, `451 local error` (greylisting, rate limits) go through the normal [retry schedule](/docs/features/retry).
+
+<Callout type="info">
+  This is the reverse of the HTTP convention, where 4xx is permanent and 5xx is
+  retried. SMTP's codes mean different things: 4xx is "try again later", 5xx
+  is "don't bother".
+</Callout>
+
+## Message format
+
+A message with text, HTML **and** attachments is sent as nested MIME: a `multipart/mixed` envelope whose first part is a `multipart/alternative` (plain text + HTML), followed by one part per attachment. Mail clients render the HTML with the text fallback and list the attachments, instead of showing the body as a download. Text-only, HTML-only, and text+HTML without attachments use the simpler flat structure.
 
 ## Troubleshooting
 
 - **`connection refused`** — wrong host/port, or firewall / cloud provider blocking.
 - **handshake error on port 587** — you set `TLS: true`. Leave it `false`; STARTTLS upgrades automatically.
-- **`535 5.7.8`** — bad credentials. For Gmail, you need an app password, not your account password.
+- **`535 5.7.8`** — bad credentials (permanent, not retried). For Gmail, you need an app password, not your account password.
+- **`i/o timeout` mid-session** — the server stalled after accepting the connection and `Timeout` (default 30s) expired. Raise it if your relay is genuinely slow.
 - **Works locally, fails in prod** — your cloud provider is almost certainly blocking port 25/587. Switch to an API driver.

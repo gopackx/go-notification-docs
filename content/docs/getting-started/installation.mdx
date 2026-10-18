@@ -57,6 +57,18 @@ func main() {
 
 Run `go run .` — if it prints `go-notification ready: true`, you're done.
 
+## Running the examples
+
+The repository ships runnable programs under `_examples/`. They form a **separate Go module** (`github.com/gopackx/go-notification/_examples`) so that the library itself keeps zero third-party dependencies: the examples that use the database channel pull in the cgo-free `modernc.org/sqlite` driver, which the library doesn't need. Run them from that directory, not from the repository root:
+
+```bash
+git clone https://github.com/gopackx/go-notification
+cd go-notification/_examples
+go run ./basic
+```
+
+Swap `./basic` for `./multi-channel`, `./whatsapp-waha`, `./email-api` or `./full-example`. Each program documents the environment variables it reads at the top of its `main.go`; the walkthroughs are under [Examples](/docs/examples/basic).
+
 ## Next step
 
 Continue with **[Quick Start](/docs/getting-started/quick-start)** to send your first notification.

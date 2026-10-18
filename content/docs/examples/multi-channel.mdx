@@ -5,6 +5,13 @@ description: One notification, fanned out to email, WhatsApp, and the database i
 
 The appeal of a unified notification library is that one `Send()` reaches the user everywhere. This example shows an `OrderShipped` going to mail + WhatsApp + database in one call.
 
+<Callout type="info" title="Repository version uses SQLite">
+  The runnable version in `_examples/multi-channel` stores notifications in an
+  in-memory SQLite database through the cgo-free `modernc.org/sqlite` driver, so
+  it runs without a database server. The listing below uses Postgres to show a
+  production-shaped setup; only the `sql.Open` call and the driver import differ.
+</Callout>
+
 ## Setup
 
 ```go
@@ -148,3 +155,27 @@ func main() {
 5. On any failure, retry kicks in per that channel. Others continue unaffected.
 
 Total wall time: `max(mail_latency, whatsapp_latency, db_insert_latency)`, not the sum.
+
+## Run it
+
+The examples are a **separate Go module** under `_examples/` so the library itself stays free of third-party dependencies — the SQLite driver the database examples need lives only in that module.
+
+```bash
+export MAILGUN_API_KEY=key-xxxx
+export WAHA_API_KEY=your-key
+cd _examples && go run ./multi-channel
+```
+
+To use SQLite in your own copy of the listing, swap the Postgres import and dialect:
+
+```go
+import _ "modernc.org/sqlite" // cgo-free; registers the "sqlite" driver
+
+db, err := sql.Open("sqlite", ":memory:")
+if err != nil { panic(err) }
+// Each new connection to ":memory:" is a fresh database — pin the pool to one.
+db.SetMaxOpenConns(1)
+
+migrate.Up(ctx, db, database.DialectSQLite, "notifications")
+store := database.NewSQLStore(db, database.DialectSQLite)
+```

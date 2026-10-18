@@ -5,6 +5,13 @@ description: A complete minimal program that sends email via an API-based driver
 
 This is the recommended production setup — API-based driver instead of SMTP, so it works on any cloud host (see [SMTP Port Blocking](/docs/guides/smtp-cloud-issues)).
 
+<Callout type="info" title="Examples live in their own Go module">
+  The runnable version of this program is in `_examples/email-api` of the
+  repository. The `_examples/` directory is a **separate Go module**, so the
+  library itself keeps zero third-party dependencies. Run it from there:
+  `cd _examples && go run ./email-api`.
+</Callout>
+
 ## Mailgun variant
 
 ```go
@@ -99,7 +106,8 @@ export MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # or SendGrid
 export SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-go run .
+# from a clone of the repository
+cd _examples && go run ./email-api
 ```
 
 ## Deliverability checklist
