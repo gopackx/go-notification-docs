@@ -7,6 +7,16 @@ All notable changes to **go-notification** are listed here. The format follows [
 
 ---
 
+## v1.0.2 — Redacted notifier logs, security policy
+
+A patch release. No API changes.
+
+### Security
+- **The notifier's own log lines are redacted.** The "notification delivery failed" log and the callback-panic logs now pass the error text through `middleware.Redact`, so a driver error that echoes a bearer token or `api_key=…` cannot land in your logs via the library. The `err` handed to `Config.OnError` is unchanged and still unredacted so you can inspect it; redact it yourself before logging. See [Security & Redaction](/docs/features/security#what-the-library-redacts-for-you).
+- **`SECURITY.md` added** to the repository, with private vulnerability reporting through GitHub Security Advisories. See [Reporting a vulnerability](/docs/features/security#reporting-a-vulnerability).
+
+---
+
 ## v1.0.1 — Bug fixes and hardening
 
 A patch release. No API changes; a few behaviours were corrected, and the error values the HTTP drivers produce are now safe to log.

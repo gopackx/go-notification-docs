@@ -50,6 +50,7 @@ Since v1.0.1 every HTTP driver sanitises its own error values before they reach 
 - **Request URL** — only the scheme and host survive (`https://api.telegram.org`). Path, query string and userinfo are dropped, so a Telegram bot token embedded in the path, or a Slack/Discord/Teams webhook URL, never appears in an error message.
 - **Response body** — the snippet of the provider's response that is embedded in the error passes through `middleware.Redact`.
 - **Webhook URL parse errors** — the webhook driver redacts the URL in parse failures too, since Go's `url.Parse` error echoes its input.
+- **The notifier's own log lines** (since v1.0.2) — the "notification delivery failed" and callback-panic logs pass the error text through `middleware.Redact`. This covers errors from custom channels too, which httpx never sees. Note that the `err` passed to `OnError` is *not* redacted.
 
 So an `OnError` callback that logs `err` as-is is safe for the library's own errors:
 
@@ -89,4 +90,6 @@ Every HTTP driver talks HTTPS using Go's default transport and the system CA bun
 
 ## Reporting a vulnerability
 
-Contact the maintainer privately — by email, or through the GitHub repository's issue tracker at [github.com/gopackx/go-notification](https://github.com/gopackx/go-notification) with the details withheld until you're in touch. Don't disclose publicly until a fix ships.
+Please **don't open a public issue** for security problems. Report privately through GitHub's private vulnerability reporting: open the repository's **Security** tab and click **Report a vulnerability**, or go straight to [github.com/gopackx/go-notification/security/advisories/new](https://github.com/gopackx/go-notification/security/advisories/new).
+
+The full policy — supported versions, what to include in a report, and response expectations (acknowledgement within 72 hours, fix or mitigation plan within 14 days for confirmed issues) — lives in [SECURITY.md](https://github.com/gopackx/go-notification/blob/main/SECURITY.md) in the repository.
